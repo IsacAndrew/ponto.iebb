@@ -1,0 +1,74 @@
+{% extends "base_admin.html" %}
+
+{% block titulo %}Usuários{% endblock %}
+{% block ativo_usuarios %}ativo{% endblock %}
+
+{% block conteudo %}
+
+<h2>Usuários do Sistema (Administrativo)</h2>
+
+<style>
+    .lista-usuarios { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .card-usuario { background: white; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .card-usuario-topo { display:flex; justify-content:space-between; align-items:start; margin-bottom:10px; }
+    .card-usuario-nome { font-weight:bold; font-size:15px; color:#1f2937; }
+    .card-usuario-login { font-size:12px; color:#888; }
+    .status-ativo { color:#16a34a; font-size:12px; }
+    .status-inativo { color:#dc2626; font-size:12px; }
+    .card-usuario-acoes { display:flex; gap:10px; margin-top:10px; }
+    .card-usuario-acoes a, .card-usuario-acoes button {
+        flex:1; text-align:center; padding:8px; border-radius:8px; font-size:13px;
+        text-decoration:none; border:none; cursor:pointer;
+    }
+    .acao-editar { background:#eff6ff; color:#2563eb; }
+    .acao-excluir { background:#fee2e2; color:#dc2626; }
+    .formulario-novo { background:white; padding:20px; border-radius:14px; max-width:420px; }
+    .formulario-novo label { display:block; font-size:13px; margin-bottom:4px; color:#444; }
+    .formulario-novo input { width:100%; padding:10px; margin-bottom:14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px; }
+    .formulario-novo button {
+        width:100%; padding:12px; background:#16a34a; color:white; border:none;
+        border-radius:8px; cursor:pointer; font-size:15px; font-weight:bold;
+    }
+</style>
+
+<div class="lista-usuarios">
+    {% for adm in admins %}
+    <div class="card-usuario">
+        <div class="card-usuario-topo">
+            <div>
+                <div class="card-usuario-nome">{{ adm.nome }}</div>
+                <div class="card-usuario-login">{{ adm.identificador }}</div>
+            </div>
+            <span class="{{ 'status-ativo' if adm.ativo else 'status-inativo' }}">
+                {{ "Ativo" if adm.ativo else "Desativado" }}
+            </span>
+        </div>
+
+        <div class="card-usuario-acoes">
+            <a href="{{ url_for('admin_editar_usuario', usuario_id=adm.id) }}" class="acao-editar">Editar</a>
+            <form method="POST" action="{{ url_for('admin_remover_usuario', usuario_id=adm.id) }}"
+                  onsubmit="return confirm('Excluir {{ adm.nome }}? Essa ação não pode ser desfeita.');" style="flex:1;">
+                <button type="submit" class="acao-excluir" style="width:100%;">Excluir</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="formulario-novo">
+    <h3 style="margin-top:0; font-size:16px;">Adicionar novo usuário administrativo</h3>
+    <form method="POST" action="{{ url_for('admin_adicionar_usuario') }}">
+        <label>Nome completo</label>
+        <input type="text" name="nome" required>
+
+        <label>Login</label>
+        <input type="text" name="identificador" required>
+
+        <label>Senha</label>
+        <input type="password" name="senha" required minlength="4">
+
+        <button type="submit">Adicionar</button>
+    </form>
+</div>
+
+{% endblock %}

@@ -1,0 +1,433 @@
+<!--
+    bater_ponto.html
+    ------------------
+    Tela redesenhada: agora é UM ÚNICO botão, que muda de cor, texto e
+    ícone dependendo de quantas batidas o usuário já fez hoje. O
+    servidor (app.py) decide qual é a próxima batida -- esse HTML só
+    mostra o que ele manda.
+
+    Estados do botão (nessa ordem, ao longo do dia):
+      1) Entrada            -> verde
+      2) Almoço              -> laranja
+      3) Retorno do Almoço    -> azul
+      4) Saída                 -> vermelho
+      5) (dia completo)         -> cinza, desabilitado, "Até o próximo dia"
+
+    Layout pensado primeiro pro celular (Android/iOS) -- botão grande,
+    fácil de tocar, sem precisar de precisão de mouse.
+-->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Bater Ponto</title>
+
+    <!-- Leaflet: biblioteca de mapas gratuita, sem precisar de chave de API -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            padding: 20px;
+            background: linear-gradient(160deg, #0f2e1c 0%, #14532d 50%, #1e6b3a 100%);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topo {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 460px;
+            width: 100%;
+            margin: 0 auto 20px auto;
+        }
+        .topo span { font-size: 14px; color: rgba(255,255,255,0.85); }
+        .topo a {
+            font-size: 13px;
+            color: white;
+            text-decoration: none;
+            background: rgba(255,255,255,0.15);
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+
+        .cartao {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-radius: 22px;
+            padding: 36px 22px;
+            max-width: 460px;
+            width: 100%;
+            margin: 0 auto;
+            text-align: center;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        #relogio {
+            font-size: 52px;
+            font-weight: bold;
+            color: white;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.25);
+        }
+        #data {
+            font-size: 15px;
+            color: rgba(255,255,255,0.75);
+            margin-bottom: 36px;
+        }
+
+        /* --- O botão único --- */
+        #botao-ponto {
+            width: 210px;
+            height: 210px;
+            max-width: 60vw;
+            max-height: 60vw;
+            border-radius: 50%;
+            border: none;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.3s ease, background 0.4s ease;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+        }
+        #botao-ponto:active {
+            transform: scale(0.94);
+        }
+        #botao-ponto:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+            background: #4b5563 !important;
+            box-shadow: none;
+        }
+        #botao-ponto svg { width: 46px; height: 46px; }
+
+        /* Cores por estado (aplicadas via classe, trocada pelo JS) */
+        .estado-entrada       { background: radial-gradient(circle at 30% 30%, #22c55e, #15803d); }
+        .estado-saida_almoco  { background: radial-gradient(circle at 30% 30%, #fb923c, #c2410c); }
+        .estado-volta_almoco  { background: radial-gradient(circle at 30% 30%, #38bdf8, #0369a1); }
+        .estado-saida         { background: radial-gradient(circle at 30% 30%, #f87171, #b91c1c); }
+
+        /* Animação de "pulso" ao clicar com sucesso */
+        @keyframes pulso-sucesso {
+            0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
+            100% { box-shadow: 0 0 0 28px rgba(255,255,255,0); }
+        }
+        .animando { animation: pulso-sucesso 0.7s ease-out; }
+
+        /* Leve "respiração" contínua no botão pra chamar atenção (sutil) */
+        @keyframes respirar {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.025); }
+        }
+        #botao-ponto.pode-bater { animation: respirar 2.8s ease-in-out infinite; }
+
+        #mensagem-resultado {
+            margin-top: 26px;
+            min-height: 20px;
+            font-size: 14px;
+        }
+        #mensagem-resultado.sucesso { color: #86efac; }
+        #mensagem-resultado.aviso { color: #fde68a; }
+
+        #status-gps {
+            font-size: 12px;
+            color: rgba(255,255,255,0.55);
+            margin-top: 18px;
+        }
+
+        .mensagens {
+            list-style: none;
+            padding: 0;
+            margin: 0 auto 16px auto;
+            max-width: 460px;
+            width: 100%;
+        }
+        .mensagens li {
+            background-color: rgba(254, 243, 199, 0.95);
+            color: #92400e;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-bottom: 8px;
+            text-align: left;
+        }
+
+        /* --- Modal do mapa --- */
+        #modal-fundo {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+        #modal-caixa {
+            background: white;
+            border-radius: 14px;
+            padding: 20px;
+            max-width: 440px;
+            width: 100%;
+        }
+        #modal-caixa h3 { margin-top: 0; font-size: 17px; color: #1f2937; }
+        #modal-caixa p { font-size: 14px; color: #444; }
+        #mapa { height: 240px; border-radius: 10px; margin: 12px 0; }
+        #modal-fechar {
+            width: 100%;
+            padding: 13px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="topo">
+        <span>Olá, {{ usuario.nome }}</span>
+        <div>
+            {% if usuario.eh_admin() %}
+                <a href="{{ url_for('admin_index') }}">Painel Admin</a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}">Sair</a>
+        </div>
+    </div>
+
+    {% with mensagens = get_flashed_messages() %}
+        {% if mensagens %}
+            <ul class="mensagens">
+                {% for mensagem in mensagens %}
+                    <li>{{ mensagem }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+
+    <div class="cartao">
+        <div id="relogio">--:--:--</div>
+        <div id="data">--/--/----</div>
+
+        <button
+            id="botao-ponto"
+            type="button"
+            class="{% if proximo_tipo %}estado-{{ proximo_tipo }} pode-bater{% endif %}"
+            {% if not proximo_tipo %}disabled{% endif %}
+            onclick="baterPonto()"
+        >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+            </svg>
+            <span id="texto-botao">{{ proximo_rotulo }}</span>
+        </button>
+
+        <div id="mensagem-resultado"></div>
+        <div id="status-gps">Localizando...</div>
+    </div>
+
+    <!-- Modal com o mapa -- só aparece quando o ponto é batido fora do raio -->
+    <div id="modal-fundo">
+        <div id="modal-caixa">
+            <h3>Você está longe da escola</h3>
+            <p id="modal-texto-distancia">Calculando distância...</p>
+            <div id="mapa"></div>
+            <button id="modal-fechar" onclick="fecharModal()">Entendi</button>
+        </div>
+    </div>
+
+    <script>
+        const ESCOLA_LAT = {{ escola_latitude }};
+        const ESCOLA_LNG = {{ escola_longitude }};
+        const RAIO_METROS = {{ raio_tolerancia_metros }};
+
+        let mapaLeaflet = null;
+        let marcadorProfessor = null;
+
+        // ------------------------------------------------------------
+        // RELÓGIO
+        // ------------------------------------------------------------
+        function atualizarRelogio() {
+            const agora = new Date();
+            document.getElementById("relogio").textContent =
+                String(agora.getHours()).padStart(2, "0") + ":" +
+                String(agora.getMinutes()).padStart(2, "0") + ":" +
+                String(agora.getSeconds()).padStart(2, "0");
+
+            document.getElementById("data").textContent =
+                String(agora.getDate()).padStart(2, "0") + "/" +
+                String(agora.getMonth() + 1).padStart(2, "0") + "/" +
+                agora.getFullYear();
+        }
+        atualizarRelogio();
+        setInterval(atualizarRelogio, 1000);
+
+        // ------------------------------------------------------------
+        // LOCALIZAÇÃO (GPS)
+        // ------------------------------------------------------------
+        let ultimaLatitude = null;
+        let ultimaLongitude = null;
+
+        function atualizarStatusGPS(texto) {
+            document.getElementById("status-gps").textContent = texto;
+        }
+
+        function pedirLocalizacao(callback) {
+            if (!navigator.geolocation) {
+                atualizarStatusGPS("Seu navegador não suporta localização.");
+                if (callback) callback();
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                function (posicao) {
+                    ultimaLatitude = posicao.coords.latitude;
+                    ultimaLongitude = posicao.coords.longitude;
+                    atualizarStatusGPS("Localização encontrada.");
+                    if (callback) callback();
+                },
+                function () {
+                    atualizarStatusGPS("Não foi possível obter sua localização. Ative o GPS.");
+                    if (callback) callback();
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+        pedirLocalizacao();
+
+        // ------------------------------------------------------------
+        // MODAL COM MAPA
+        // ------------------------------------------------------------
+        function abrirModalComMapa(distanciaMetros, latProfessor, lngProfessor) {
+            document.getElementById("modal-texto-distancia").textContent =
+                `Você está a aproximadamente ${Math.round(distanciaMetros)}m da escola. ` +
+                `É preciso estar dentro do círculo (raio de ${RAIO_METROS}m) para bater o ponto.`;
+
+            document.getElementById("modal-fundo").style.display = "flex";
+
+            setTimeout(function () {
+                if (!mapaLeaflet) {
+                    mapaLeaflet = L.map('mapa').setView([ESCOLA_LAT, ESCOLA_LNG], 16);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap contributors'
+                    }).addTo(mapaLeaflet);
+                    L.circle([ESCOLA_LAT, ESCOLA_LNG], {
+                        radius: RAIO_METROS, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.15
+                    }).addTo(mapaLeaflet);
+                    L.marker([ESCOLA_LAT, ESCOLA_LNG]).addTo(mapaLeaflet).bindPopup('Escola').openPopup();
+                } else {
+                    mapaLeaflet.invalidateSize();
+                }
+
+                if (latProfessor && lngProfessor) {
+                    if (marcadorProfessor) mapaLeaflet.removeLayer(marcadorProfessor);
+                    marcadorProfessor = L.marker([latProfessor, lngProfessor], { opacity: 0.85 })
+                        .addTo(mapaLeaflet).bindPopup('Você está aqui');
+
+                    const limites = L.latLngBounds([ESCOLA_LAT, ESCOLA_LNG], [latProfessor, lngProfessor]);
+                    mapaLeaflet.fitBounds(limites, { padding: [30, 30] });
+                }
+            }, 150);
+        }
+
+        function fecharModal() {
+            document.getElementById("modal-fundo").style.display = "none";
+        }
+
+        // ------------------------------------------------------------
+        // ATUALIZAR O BOTÃO (cor + texto) CONFORME O ESTADO
+        // ------------------------------------------------------------
+        const CORES_ESTADO = ["estado-entrada", "estado-saida_almoco", "estado-volta_almoco", "estado-saida"];
+
+        function atualizarBotao(proximoTipo, proximoRotulo) {
+            const botao = document.getElementById("botao-ponto");
+            const texto = document.getElementById("texto-botao");
+
+            CORES_ESTADO.forEach(function (classe) { botao.classList.remove(classe); });
+
+            texto.textContent = proximoRotulo;
+
+            if (proximoTipo) {
+                botao.classList.add("estado-" + proximoTipo);
+                botao.classList.add("pode-bater");
+                botao.disabled = false;
+            } else {
+                botao.classList.remove("pode-bater");
+                botao.disabled = true;
+            }
+        }
+
+        // ------------------------------------------------------------
+        // ENVIO DO PONTO
+        // ------------------------------------------------------------
+        function mostrarResultado(texto, tipo) {
+            const caixa = document.getElementById("mensagem-resultado");
+            caixa.textContent = texto;
+            caixa.className = tipo;
+        }
+
+        function baterPonto() {
+            const botao = document.getElementById("botao-ponto");
+            if (botao.disabled) return;
+
+            pedirLocalizacao(function () {
+                const dados = new FormData();
+                if (ultimaLatitude !== null) dados.append("latitude", ultimaLatitude);
+                if (ultimaLongitude !== null) dados.append("longitude", ultimaLongitude);
+
+                fetch("{{ url_for('registrar_ponto') }}", {
+                    method: "POST",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                    body: dados
+                })
+                    .then(function (resposta) { return resposta.json(); })
+                    .then(function (resultado) {
+                        if (resultado.status === "fora_do_raio") {
+                            abrirModalComMapa(resultado.distancia, ultimaLatitude, ultimaLongitude);
+                            return;
+                        }
+                        if (resultado.status === "erro") {
+                            mostrarResultado(resultado.mensagem, "aviso");
+                            return;
+                        }
+
+                        // Sucesso ou pendente -- atualiza o botão pro próximo estado
+                        // e dispara a animação de "pulso".
+                        atualizarBotao(resultado.proximo_tipo, resultado.proximo_rotulo);
+
+                        botao.classList.add("animando");
+                        setTimeout(function () { botao.classList.remove("animando"); }, 700);
+
+                        mostrarResultado(resultado.mensagem, resultado.status === "pendente" ? "aviso" : "sucesso");
+                    })
+                    .catch(function () {
+                        mostrarResultado("Erro ao registrar o ponto. Tente novamente.", "aviso");
+                    });
+            });
+        }
+    </script>
+
+</body>
+</html>

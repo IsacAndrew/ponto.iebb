@@ -1,0 +1,120 @@
+<!--
+    base_admin.html
+    -----------------
+    Esse é um template "base" -- ele não é usado sozinho. As outras
+    telas do painel admin (horários, usuários, Excel) vão "herdar" dele
+    usando a tag de extensão do Jinja2 no topo do arquivo delas.
+
+    Isso evita repetir o mesmo menu/cabeçalho em cada tela -- muda aqui
+    uma vez, muda em todas.
+-->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block titulo %}Painel Admin{% endblock %} - Sistema de Ponto</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background-color: #f2f2f2;
+            margin: 0;
+        }
+        .cabecalho {
+            background-color: #1e293b;
+            color: white;
+            padding: 12px 16px;
+        }
+        .cabecalho .titulo-app {
+            font-size: 15px;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 10px;
+        }
+        .menu {
+            display: flex;
+            gap: 4px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            padding-bottom: 2px;
+        }
+        .menu::-webkit-scrollbar { display: none; }
+        .menu a {
+            color: #cbd5e1;
+            text-decoration: none;
+            font-size: 13px;
+            padding: 8px 12px;
+            white-space: nowrap;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+        .menu a:hover, .menu a.ativo {
+            color: white;
+            background: rgba(59, 130, 246, 0.25);
+        }
+        .conteudo {
+            padding: 16px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        @media (min-width: 640px) {
+            .cabecalho {
+                padding: 14px 24px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .cabecalho .titulo-app { margin-bottom: 0; }
+            .conteudo { padding: 24px; }
+        }
+        .mensagens {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 16px 0;
+        }
+        .mensagens li {
+            background-color: #fef3c7;
+            color: #92400e;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="cabecalho">
+        <span class="titulo-app">Painel Admin - {{ usuario.nome }}</span>
+        <div class="menu">
+            <a href="{{ url_for('admin_horarios') }}"
+               class="{% block ativo_horarios %}{% endblock %}">Horários</a>
+            <a href="{{ url_for('admin_professores') }}"
+               class="{% block ativo_professores %}{% endblock %}">Professores</a>
+            <a href="{{ url_for('admin_usuarios') }}"
+               class="{% block ativo_usuarios %}{% endblock %}">Usuários</a>
+            <a href="{{ url_for('admin_excel') }}"
+               class="{% block ativo_excel %}{% endblock %}">Exportar Excel</a>
+            <a href="{{ url_for('bater_ponto') }}">Bater Ponto</a>
+            <a href="{{ url_for('logout') }}">Sair</a>
+        </div>
+    </div>
+
+    <div class="conteudo">
+        {% with mensagens = get_flashed_messages() %}
+            {% if mensagens %}
+                <ul class="mensagens">
+                    {% for mensagem in mensagens %}
+                        <li>{{ mensagem }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        {% block conteudo %}{% endblock %}
+    </div>
+
+</body>
+</html>

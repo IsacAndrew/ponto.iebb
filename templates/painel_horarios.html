@@ -1,0 +1,177 @@
+{% extends "base_admin.html" %}
+
+{% block titulo %}Horários{% endblock %}
+{% block ativo_horarios %}ativo{% endblock %}
+
+{% block conteudo %}
+
+<h2>Horários dos Professores</h2>
+
+<!--
+    A tabela larga foi trocada por CARDS empilhados -- uma tabela de
+    7 colunas simplesmente não cabe numa tela de celular sem cortar ou
+    exigir rolagem lateral (péssima experiência no toque). Um card por
+    professor/dia, com os 4 horários organizados em grade 2x2 dentro
+    dele, resolve isso e ainda fica bom em telas largas.
+-->
+<style>
+    .filtros {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
+        background: white;
+        padding: 14px;
+        border-radius: 12px;
+    }
+    .filtros > div { flex: 1; min-width: 130px; }
+    .filtros label { display:block; font-size: 12px; color:#666; margin-bottom: 4px; }
+    .filtros input {
+        width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 15px;
+    }
+    .filtros button {
+        padding: 10px 18px; background:#2563eb; color:white; border:none;
+        border-radius: 8px; cursor:pointer; font-size: 15px; align-self: end;
+    }
+
+    .lista-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 14px;
+    }
+
+    .card-registro {
+        background: white;
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .card-cabecalho {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+    }
+    .card-nome { font-weight: bold; font-size: 15px; color: #1f2937; }
+    .card-data { font-size: 13px; color: #888; }
+
+    .grade-horarios {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    .horario-item {
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 8px 10px;
+        text-align: center;
+    }
+    .horario-item.pendente { background: #fee2e2; }
+    .horario-item.ajustado { background: #dcfce7; }
+    .horario-rotulo { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; }
+    .horario-valor { font-size: 17px; font-weight: bold; color: #1f2937; margin-top: 2px; }
+    .horario-valor.vazio { color: #ccc; font-weight: normal; }
+    .horario-obs { font-size: 10px; color: #92400e; margin-top: 2px; }
+
+    .card-acao a {
+        display: block;
+        text-align: center;
+        padding: 9px;
+        background: #eff6ff;
+        color: #2563eb;
+        border-radius: 8px;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: bold;
+    }
+
+    .sem-resultado {
+        text-align: center;
+        color: #888;
+        padding: 30px;
+        background: white;
+        border-radius: 12px;
+    }
+</style>
+
+<form method="GET" action="{{ url_for('admin_horarios') }}" class="filtros">
+    <div>
+        <label>Nome do professor</label>
+        <input type="text" name="nome" value="{{ filtro_nome or '' }}" placeholder="Buscar por nome">
+    </div>
+    <div>
+        <label>De</label>
+        <input type="date" name="data_inicio" value="{{ filtro_data_inicio or '' }}">
+    </div>
+    <div>
+        <label>Até</label>
+        <input type="date" name="data_fim" value="{{ filtro_data_fim or '' }}">
+    </div>
+    <button type="submit">Filtrar</button>
+</form>
+
+<div class="lista-cards">
+    {% for linha in linhas %}
+    <div class="card-registro">
+        <div class="card-cabecalho">
+            <span class="card-nome">{{ linha.nome_professor }}</span>
+            <span class="card-data">{{ linha.data }}</span>
+        </div>
+
+        <div class="grade-horarios">
+            {% for tipo, rotulo in [("entrada", "Entrada"), ("saida_almoco", "Saída Almoço"),
+                                     ("volta_almoco", "Volta Almoço"), ("saida", "Saída")] %}
+                {% set registro = linha.batimentos.get(tipo) %}
+                <div class="horario-item {{ registro.status if registro and registro.status != 'normal' else '' }}">
+                    <div class="horario-rotulo">{{ rotulo }}</div>
+                    {% if registro %}
+                        <div class="horario-valor">{{ registro.horario.strftime('%H:%M') }}</div>
+                        {% if registro.status == 'pendente' %}<div class="horario-obs">atrasado</div>{% endif %}
+                        {% if registro.status == 'ajustado' %}<div class="horario-obs">ajustado</div>{% endif %}
+                    {% else %}
+                        <div class="horario-valor vazio">—</div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="card-acao">
+            <a href="{{ url_for('admin_editar_ponto', usuario_id=linha.usuario_id, data=linha.data_url) }}">
+                Editar horários
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <div class="sem-resultado">Nenhum registro encontrado para esse filtro.</div>
+    {% endfor %}
+</div>
+
+<hr style="margin: 32px 0; border: none; border-top: 1px solid #ddd;">
+
+<div style="background:white; padding: 20px; border-radius: 14px; max-width: 460px;">
+    <h3 style="margin-top:0; font-size: 16px;">Conceder perdão de atraso</h3>
+    <p style="font-size: 13px; color:#666;">
+        Use isso quando um professor avisar ANTES que vai chegar atrasado
+        por um motivo justificado. Vale só para o próximo ponto batido
+        por ele -- depois disso, a trava volta ao normal sozinha.
+    </p>
+    <form method="POST" action="{{ url_for('admin_conceder_perdao') }}" style="display:flex; gap:10px; flex-wrap: wrap;">
+        <select name="usuario_id" required style="flex:1; min-width: 160px; padding:10px; border-radius:8px; border:1px solid #d1d5db;">
+            <option value="">Selecione o professor</option>
+            {% for professor in todos_professores %}
+                <option value="{{ professor.id }}">
+                    {{ professor.nome }}
+                    {% if professor.perdao_atraso_ativo %} (perdão já ativo){% endif %}
+                </option>
+            {% endfor %}
+        </select>
+        <button type="submit" style="padding: 10px 18px; background:#16a34a; color:white; border:none; border-radius:8px; cursor:pointer;">
+            Conceder
+        </button>
+    </form>
+</div>
+
+{% endblock %}
