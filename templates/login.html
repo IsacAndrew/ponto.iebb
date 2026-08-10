@@ -1,0 +1,109 @@
+<!--
+    login.html
+    -----------
+    Tela de login do sistema. O Flask usa "Jinja2" para inserir dados
+    Python dentro do HTML -- é por isso que você vê chaves duplas e
+    blocos com porcentagem espalhados aqui embaixo. É tudo processado
+    no servidor antes de mandar a página pronta pro navegador.
+-->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Sistema de Ponto</title>
+    <style>
+        /* Estilo simples, sem exagero -- só pra ficar legível e usável
+           no celular (que é como os professores vão acessar). */
+        * { box-sizing: border-box; }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background-color: #f2f2f2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .caixa-login {
+            background: #ffffff;
+            padding: 32px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            width: 90%;
+            max-width: 360px;
+        }
+        h1 {
+            font-size: 20px;
+            text-align: center;
+            margin-bottom: 24px;
+            color: #222;
+        }
+        label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 14px;
+            color: #444;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px; /* 16px evita zoom automático no iPhone */
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover { background-color: #1d4ed8; }
+        .mensagens {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 16px 0;
+        }
+        .mensagens li {
+            background-color: #fee2e2;
+            color: #991b1b;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="caixa-login">
+        <h1>Sistema de Ponto</h1>
+
+        <!-- Aqui aparecem as mensagens de erro (flash) que o app.py manda,
+             tipo "matrícula ou senha incorretos". -->
+        {% with mensagens = get_flashed_messages() %}
+            {% if mensagens %}
+                <ul class="mensagens">
+                    {% for mensagem in mensagens %}
+                        <li>{{ mensagem }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('login') }}">
+            <label for="identificador">Matrícula / Login</label>
+            <input type="text" id="identificador" name="identificador" required autofocus>
+
+            <label for="senha">Senha</label>
+            <input type="password" id="senha" name="senha" required>
+
+            <button type="submit">Entrar</button>
+        </form>
+    </div>
+</body>
+</html>
