@@ -7,13 +7,6 @@
 
 <h2>Horários dos Professores</h2>
 
-<!--
-    A tabela larga foi trocada por CARDS empilhados -- uma tabela de
-    7 colunas simplesmente não cabe numa tela de celular sem cortar ou
-    exigir rolagem lateral (péssima experiência no toque). Um card por
-    professor/dia, com os 4 horários organizados em grade 2x2 dentro
-    dele, resolve isso e ainda fica bom em telas largas.
--->
 <style>
     .filtros {
         display: flex;
@@ -143,14 +136,18 @@
                 Editar horários
             </a>
         </div>
+
+        {% set algum_editado = linha.batimentos.values() | selectattr('nome_editor') | list %}
+        {% if algum_editado %}
+            {% set ultimo = algum_editado | sort(attribute='editado_em') | last %}
+            <div style="font-size:11px; color:#999; margin-top:8px; text-align:center;">
+                Última edição realizada por {{ ultimo.nome_editor }} no dia {{ ultimo.editado_em.strftime('%d/%m/%Y às %H:%M') }}
+            </div>
+        {% endif %}
     </div>
     {% else %}
     <div class="sem-resultado">Nenhum registro encontrado para esse filtro.</div>
     {% endfor %}
 </div>
-
-<hr style="margin: 32px 0; border: none; border-top: 1px solid #ddd;">
-
-
 
 {% endblock %}
