@@ -1,21 +1,3 @@
-<!--
-    bater_ponto.html
-    ------------------
-    Tela redesenhada: agora é UM ÚNICO botão, que muda de cor, texto e
-    ícone dependendo de quantas batidas o usuário já fez hoje. O
-    servidor (app.py) decide qual é a próxima batida -- esse HTML só
-    mostra o que ele manda.
-
-    Estados do botão (nessa ordem, ao longo do dia):
-      1) Entrada            -> verde
-      2) Almoço              -> laranja
-      3) Retorno do Almoço    -> azul
-      4) Saída                 -> vermelho
-      5) (dia completo)         -> cinza, desabilitado, "Até o próximo dia"
-
-    Layout pensado primeiro pro celular (Android/iOS) -- botão grande,
-    fácil de tocar, sem precisar de precisão de mouse.
--->
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -23,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>Bater Ponto</title>
 
-    <!-- Leaflet: biblioteca de mapas gratuita, sem precisar de chave de API -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -88,7 +69,6 @@
             margin-bottom: 36px;
         }
 
-        /* --- O botão único --- */
         #botao-ponto {
             width: 210px;
             height: 210px;
@@ -133,7 +113,6 @@
         }
         .animando { animation: pulso-sucesso 0.7s ease-out; }
 
-        /* Leve "respiração" contínua no botão pra chamar atenção (sutil) */
         @keyframes respirar {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.025); }
@@ -171,7 +150,6 @@
             text-align: left;
         }
 
-        /* --- Modal do mapa --- */
         #modal-fundo {
             display: none;
             position: fixed;
@@ -248,8 +226,7 @@
         <div id="mensagem-resultado"></div>
         <div id="status-gps">Localizando...</div>
     </div>
-
-    <!-- Modal com o mapa -- só aparece quando o ponto é batido fora do raio -->
+    
     <div id="modal-fundo">
         <div id="modal-caixa">
             <h3>Você está longe da escola</h3>
@@ -413,8 +390,6 @@
                             return;
                         }
 
-                        // Sucesso ou pendente -- atualiza o botão pro próximo estado
-                        // e dispara a animação de "pulso".
                         atualizarBotao(resultado.proximo_tipo, resultado.proximo_rotulo);
 
                         botao.classList.add("animando");
