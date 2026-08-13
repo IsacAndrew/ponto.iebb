@@ -1,0 +1,93 @@
+{% extends "base_admin.html" %}
+
+{% block titulo %}Editar Professor{% endblock %}
+{% block ativo_professores %}ativo{% endblock %}
+
+{% block conteudo %}
+
+<h2>Editar - {{ pessoa.nome }}</h2>
+
+<style>
+    .form-editar { background:white; padding:20px; border-radius:14px; max-width:460px; }
+    .form-editar label { display:block; font-size:13px; margin-bottom:4px; color:#444; }
+    .form-editar input[type="text"], .form-editar input[type="password"], .form-editar input[type="time"], .form-editar select {
+        width:100%; padding:10px; margin-bottom:14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px;
+    }
+    .grade-horarios-edicao { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .dias-semana-caixa, .series-caixa { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+    .dias-semana-caixa label, .series-caixa label {
+        display:flex; align-items:center; gap:4px; font-size:13px; background:#f8fafc; padding:6px 10px; border-radius:8px;
+    }
+    #bloco-series { display: {{ "block" if pessoa.cargo == "professor" else "none" }}; }
+    .form-editar button { width:100%; padding:12px; background:#2563eb; color:white; border:none; border-radius:8px; cursor:pointer; font-size:15px; font-weight:bold; }
+</style>
+
+<form method="POST" class="form-editar">
+    <label>Nome completo</label>
+    <input type="text" name="nome" value="{{ pessoa.nome }}">
+
+    <label>Cargo</label>
+    <select name="cargo" id="select-cargo" onchange="alternarSeries()">
+        {% for valor, rotulo in cargos_rotulos.items() %}
+            <option value="{{ valor }}" {{ "selected" if pessoa.cargo == valor else "" }}>{{ rotulo }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Jornada de trabalho</label>
+    <div class="grade-horarios-edicao">
+        <div>
+            <label style="font-weight:normal; color:#888;">Entrada</label>
+            <input type="time" name="horario_entrada" value="{{ pessoa.horario_entrada.strftime('%H:%M') if pessoa.horario_entrada else '' }}">
+        </div>
+        <div>
+            <label style="font-weight:normal; color:#888;">Saída Almoço</label>
+            <input type="time" name="horario_saida_almoco" value="{{ pessoa.horario_saida_almoco.strftime('%H:%M') if pessoa.horario_saida_almoco else '' }}">
+        </div>
+        <div>
+            <label style="font-weight:normal; color:#888;">Volta Almoço</label>
+            <input type="time" name="horario_volta_almoco" value="{{ pessoa.horario_volta_almoco.strftime('%H:%M') if pessoa.horario_volta_almoco else '' }}">
+        </div>
+        <div>
+            <label style="font-weight:normal; color:#888;">Saída</label>
+            <input type="time" name="horario_saida" value="{{ pessoa.horario_saida.strftime('%H:%M') if pessoa.horario_saida else '' }}">
+        </div>
+    </div>
+
+    <label style="margin-top:14px;">Dias da semana trabalhados</label>
+    <div class="dias-semana-caixa">
+        {% set dias_atuais = pessoa.dias_semana_lista() %}
+        {% for codigo, rotulo in dias_semana %}
+            <label>
+                <input type="checkbox" name="dias_semana" value="{{ codigo }}" {{ "checked" if codigo in dias_atuais else "" }}>
+                {{ rotulo }}
+            </label>
+        {% endfor %}
+    </div>
+
+    <div id="bloco-series">
+        <label>Séries / turmas</label>
+        <div class="series-caixa">
+            {% set series_atuais = pessoa.series_lista() %}
+            {% for serie in series_disponiveis %}
+                <label>
+                    <input type="checkbox" name="series" value="{{ serie }}" {{ "checked" if serie in series_atuais else "" }}>
+                    {{ serie }}
+                </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <label>Nova senha (deixe em branco para não alterar)</label>
+    <input type="password" name="senha" minlength="4">
+
+    <button type="submit">Salvar</button>
+</form>
+
+<script>
+    function alternarSeries() {
+        const cargo = document.getElementById("select-cargo").value;
+        document.getElementById("bloco-series").style.display = (cargo === "professor") ? "block" : "none";
+    }
+</script>
+
+{% endblock %}
