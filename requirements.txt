@@ -1,26 +1,6 @@
-# requirements.txt
-# ------------------
-# Lista de bibliotecas que o projeto precisa. Para instalar tudo de uma
-# vez (de preferência dentro de um ambiente virtual), rode:
-#
-#   pip install -r requirements.txt
-#
-# Se nunca usou ambiente virtual, é só um "espaço isolado" pra instalar
-# essas bibliotecas sem bagunçar o Python do seu PC. Criar um:
-#
-#   python -m venv venv
-#   venv\Scripts\activate        (Windows)
-#   source venv/bin/activate     (Linux/Mac)
-#
-# Depois disso, roda o pip install de cima.
-
 Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
 Werkzeug==3.0.4
-
-# Para gerar as planilhas Excel (usaremos em breve)
 openpyxl==3.1.5
-
-# Necessário para rodar em produção (Render, VPS) -- o "app.run()" do
-# Flask sozinho é só para desenvolvimento/teste local.
 gunicorn==22.0.0
+psycopg2-binary==2.9.9
