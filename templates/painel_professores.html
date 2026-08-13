@@ -8,29 +8,63 @@
 <h2>Professores</h2>
 
 <style>
-    .lista-usuarios { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .lista-usuarios { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px; }
     .card-usuario { background: white; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
     .card-usuario-topo { display:flex; justify-content:space-between; align-items:start; margin-bottom:10px; }
     .card-usuario-nome { font-weight:bold; font-size:15px; color:#1f2937; }
     .card-usuario-login { font-size:12px; color:#888; }
+    .card-usuario-cargo { font-size:11px; color:#2563eb; background:#eff6ff; display:inline-block; padding:2px 8px; border-radius:10px; margin-top:4px; }
     .status-ativo { color:#16a34a; font-size:12px; }
     .status-inativo { color:#dc2626; font-size:12px; }
     .card-usuario-acoes { display:flex; gap:10px; margin-top:10px; }
-    .card-usuario-acoes form { flex:1; margin:0; }
-    .card-usuario-acoes button {
+    .card-usuario-acoes form, .card-usuario-acoes a { flex:1; margin:0; }
+    .card-usuario-acoes button, .card-usuario-acoes a {
         width:100%; text-align:center; padding:8px; border-radius:8px; font-size:13px; border:none; cursor:pointer;
+        text-decoration:none; display:block; box-sizing:border-box;
     }
-    .acao-alternar { background:#eff6ff; color:#2563eb; }
+    .acao-editar { background:#eff6ff; color:#2563eb; }
     .acao-excluir { background:#fee2e2; color:#dc2626; }
-    .formulario-novo { background:white; padding:20px; border-radius:14px; max-width:420px; }
-    .formulario-novo label { display:block; font-size:13px; margin-bottom:4px; color:#444; }
-    .formulario-novo input { width:100%; padding:10px; margin-bottom:14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px; }
-    .formulario-novo button {
-        width:100%; padding:12px; background:#16a34a; color:white; border:none;
-        border-radius:8px; cursor:pointer; font-size:15px; font-weight:bold;
+    .sem-resultado { text-align:center; color:#888; padding:30px; background:white; border-radius:12px; margin-bottom:20px; }
+
+    #botao-abrir-cadastro {
+        display:block; width:100%; max-width:420px; padding:12px; margin-bottom:20px;
+        background:#16a34a; color:white; border:none; border-radius:10px; font-size:15px; font-weight:bold; cursor:pointer;
     }
-    .sem-resultado { text-align:center; color:#888; padding:30px; background:white; border-radius:12px; margin-bottom:28px; }
+    #card-cadastro { display:none; background:white; padding:20px; border-radius:14px; max-width:420px; margin-bottom:28px; }
+    #card-cadastro label { display:block; font-size:13px; margin-bottom:4px; color:#444; }
+    #card-cadastro input, #card-cadastro select { width:100%; padding:10px; margin-bottom:14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px; }
+    #card-cadastro button { width:100%; padding:12px; background:#16a34a; color:white; border:none; border-radius:8px; cursor:pointer; font-size:15px; font-weight:bold; }
+
+    #mensagem-flutuante {
+        display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+        background:#16a34a; color:white; padding:14px 20px; border-radius:10px; font-size:14px;
+        box-shadow:0 4px 14px rgba(0,0,0,0.25); z-index:1000; max-width:90vw; text-align:center;
+    }
 </style>
+
+<button id="botao-abrir-cadastro" onclick="abrirCadastro()">Cadastrar Novo Professor</button>
+
+<div id="card-cadastro">
+    <h3 style="margin-top:0; font-size:16px;">Cadastrar novo professor</h3>
+    <form method="POST" action="{{ url_for('admin_adicionar_professor') }}">
+        <label>Nome completo</label>
+        <input type="text" name="nome" required>
+
+        <label>Matrícula</label>
+        <input type="text" name="matricula" required placeholder="Número de matrícula">
+
+        <label>Cargo</label>
+        <select name="cargo">
+            <option value="professor">Professor</option>
+            <option value="secretaria">Secretária</option>
+        </select>
+
+        <label>Senha</label>
+        <input type="password" name="senha" required minlength="4">
+
+        <button type="submit">Cadastrar</button>
+    </form>
+</div>
 
 <div class="lista-usuarios">
     {% for prof in professores %}
@@ -39,6 +73,7 @@
             <div>
                 <div class="card-usuario-nome">{{ prof.nome }}</div>
                 <div class="card-usuario-login">Matrícula: {{ prof.identificador }}</div>
+                <span class="card-usuario-cargo">{{ cargos_rotulos.get(prof.cargo, prof.cargo) }}</span>
             </div>
             <span class="{{ 'status-ativo' if prof.ativo else 'status-inativo' }}">
                 {{ "Ativo" if prof.ativo else "Desativado" }}
@@ -46,11 +81,7 @@
         </div>
 
         <div class="card-usuario-acoes">
-            <form method="POST" action="{{ url_for('admin_alternar_professor', usuario_id=prof.id) }}">
-                <button type="submit" class="acao-alternar">
-                    {{ "Desativar" if prof.ativo else "Reativar" }}
-                </button>
-            </form>
+            <a href="{{ url_for('admin_editar_professor', usuario_id=prof.id) }}" class="acao-editar">Editar</a>
             <form method="POST" action="{{ url_for('admin_remover_professor', usuario_id=prof.id) }}"
                   onsubmit="return confirm('Remover {{ prof.nome }}? Isso também apaga o histórico de pontos dele.');">
                 <button type="submit" class="acao-excluir">Remover</button>
@@ -62,20 +93,29 @@
     {% endfor %}
 </div>
 
-<div class="formulario-novo">
-    <h3 style="margin-top:0; font-size:16px;">Cadastrar novo professor</h3>
-    <form method="POST" action="{{ url_for('admin_adicionar_professor') }}">
-        <label>Nome completo</label>
-        <input type="text" name="nome" required>
+<div id="mensagem-flutuante"></div>
 
-        <label>Matrícula</label>
-        <input type="text" name="matricula" required placeholder="Número de matrícula do professor">
+<script>
+    function abrirCadastro() {
+        document.getElementById("card-cadastro").style.display = "block";
+        document.getElementById("botao-abrir-cadastro").style.display = "none";
+    }
 
-        <label>Senha</label>
-        <input type="password" name="senha" required minlength="4">
+    document.addEventListener("DOMContentLoaded", function () {
+        const itensMensagem = document.querySelectorAll(".mensagens li");
+        itensMensagem.forEach(function (item) {
+            if (item.textContent.includes("cadastrado com sucesso")) {
+                const flutuante = document.getElementById("mensagem-flutuante");
+                flutuante.textContent = item.textContent;
+                flutuante.style.display = "block";
+                item.style.display = "none";
 
-        <button type="submit">Cadastrar</button>
-    </form>
-</div>
+                setTimeout(function () {
+                    flutuante.style.display = "none";
+                }, 5000);
+            }
+        });
+    });
+</script>
 
 {% endblock %}
