@@ -1,44 +1,18 @@
-"""
-app.py
--------
-Arquivo principal do sistema. É ele que:
-  1. Cria o app Flask
-  2. Conecta o banco de dados (models.py)
-  3. Define as rotas (URLs) -- por enquanto: login, logout, e bater ponto
-
-Para rodar o sistema (depois de instalar as dependências, ver
-requirements.txt que vamos gerar em breve):
-
-    python app.py
-
-E abrir no navegador: http://localhost:5000
-"""
-
 import os
 from datetime import datetime, time as dt_time
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from functools import wraps
 
-from config import Config
+from config import Config, DIAS_SEMANA, CARGOS_SEM_ACESSO_ADMIN, CARGOS_COM_ACESSO_ADMIN, CARGOS_ROTULOS, SERIES_DISPONIVEIS
 from models import db, Usuario, RegistroPonto
-from utils import esta_dentro_do_raio, calcular_minutos_atraso
+from utils import esta_dentro_do_raio, calcular_minutos_atraso, calcular_minutos_hora_extra, horario_esperado_do_usuario
 
 
 def criar_app():
-    """
-    Função "fábrica" que monta o app Flask. Fazer assim (em vez de criar
-    o app direto no arquivo) é uma boa prática -- facilita testar o
-    sistema depois, se você quiser.
-    """
     app = Flask(__name__)
     app.config.from_object(Config)
-
-    # Conecta o SQLAlchemy (definido em models.py) a este app específico.
     db.init_app(app)
 
-    # Cria as tabelas no banco automaticamente, caso ainda não existam.
-    # (Em produção, depois que o sistema já estiver "no ar" há um tempo,
-    # o ideal é usar migrations -- mas pra começar, isso já resolve.)
     with app.app_context():
         db.create_all()
         criar_admin_inicial_se_necessario()
@@ -48,31 +22,22 @@ def criar_app():
 
 def criar_admin_inicial_se_necessario():
     """
-    No plano gratuito do Render não tem Shell -- ou seja, não dá pra
-    rodar "python criar_admin.py" manualmente lá. Para resolver isso,
-    o próprio sistema cria o primeiro admin sozinho, assim que sobe,
-    lendo o nome/login/senha de variáveis de ambiente.
-
-    Isso só acontece se:
-      1. As variáveis ADMIN_NOME, ADMIN_LOGIN e ADMIN_SENHA estiverem
-         configuradas (no painel do Render: Environment Variables); e
-      2. Ainda não existir ninguém cadastrado com esse login.
-
-    Ou seja: é seguro rodar isso toda vez que o sistema reinicia --
-    ele só cria a conta na primeira vez, depois disso não faz nada.
+    No plano gratuito do Render não tem Shell. O sistema cria o primeiro
+    usuário de Suporte sozinho, lendo variáveis de ambiente (ADMIN_NOME,
+    ADMIN_LOGIN, ADMIN_SENHA), se ele ainda não existir.
     """
     nome = os.environ.get("ADMIN_NOME")
     login = os.environ.get("ADMIN_LOGIN")
     senha = os.environ.get("ADMIN_SENHA")
 
     if not (nome and login and senha):
-        return  # Variáveis não configuradas -- não faz nada.
+        return
 
     ja_existe = Usuario.query.filter_by(identificador=login).first()
     if ja_existe:
-        return  # Já foi criado antes -- não duplica.
+        return
 
-    novo_admin = Usuario(nome=nome, identificador=login, tipo="admin", ativo=True)
+    novo_admin = Usuario(nome=nome, identificador=login, cargo="suporte", ativo=True)
     novo_admin.definir_senha(senha)
     db.session.add(novo_admin)
     db.session.commit()
@@ -80,22 +45,6 @@ def criar_admin_inicial_se_necessario():
 
 app = criar_app()
 
-
-# ------------------------------------------------------------------
-# HORÁRIOS ESPERADOS PARA CADA TIPO DE BATIMENTO
-# ------------------------------------------------------------------
-# Isso é só um ponto de partida -- ajuste os horários reais da escola
-# aqui. Futuramente dá pra mover isso para o banco de dados, caso cada
-# professor tenha um horário diferente.
-HORARIOS_ESPERADOS = {
-    "entrada": dt_time(7, 0),
-    "saida_almoco": dt_time(12, 0),
-    "volta_almoco": dt_time(13, 0),
-    "saida": dt_time(17, 0),
-}
-
-# Ordem fixa das batidas do dia, e o texto que aparece no botão único
-# para cada uma. "Entrada" é a 1ª, "Saída" é a 4ª -- sempre nessa ordem.
 ORDEM_BATIDAS = ["entrada", "saida_almoco", "volta_almoco", "saida"]
 ROTULOS_BOTAO = {
     "entrada": "Entrada",
@@ -103,15 +52,15 @@ ROTULOS_BOTAO = {
     "volta_almoco": "Retorno do Almoço",
     "saida": "Saída",
 }
+ROTULOS_TIPO = {
+    "entrada": "Entrada",
+    "saida_almoco": "Saída Almoço",
+    "volta_almoco": "Volta Almoço",
+    "saida": "Saída",
+}
 
 
 def calcular_proxima_batida(usuario_id):
-    """
-    Conta quantos pontos esse usuário já bateu HOJE e descobre qual é o
-    próximo tipo esperado. Retorna (tipo_ou_None, quantidade_hoje).
-
-    Se já bateu os 4 do dia, o tipo volta None (o botão fica desabilitado).
-    """
     inicio_do_dia = datetime.combine(datetime.now().date(), dt_time.min)
     fim_do_dia = datetime.combine(datetime.now().date(), dt_time.max)
 
@@ -127,16 +76,7 @@ def calcular_proxima_batida(usuario_id):
     return ORDEM_BATIDAS[quantidade_hoje], quantidade_hoje
 
 
-# ------------------------------------------------------------------
-# DECORADOR: exige login
-# ------------------------------------------------------------------
 def login_obrigatorio(funcao):
-    """
-    "Decorador" -- uma função que embrulha outra função. Colocamos
-    @login_obrigatorio em cima de uma rota para garantir que só quem
-    está logado consegue acessar ela.
-    """
-
     @wraps(funcao)
     def rota_protegida(*args, **kwargs):
         if "usuario_id" not in session:
@@ -148,8 +88,6 @@ def login_obrigatorio(funcao):
 
 
 def admin_obrigatorio(funcao):
-    """Igual ao de cima, mas também exige que o usuário seja admin."""
-
     @wraps(funcao)
     def rota_protegida(*args, **kwargs):
         if "usuario_id" not in session:
@@ -163,14 +101,8 @@ def admin_obrigatorio(funcao):
     return rota_protegida
 
 
-# ------------------------------------------------------------------
-# ROTA: LOGIN
-# ------------------------------------------------------------------
 @app.route("/")
 def raiz():
-    # A URL principal (ex: https://ponto-iebb.onrender.com/) não tinha
-    # nenhuma rota associada -- por isso dava 404. Agora ela só
-    # redireciona para o login.
     return redirect(url_for("login"))
 
 
@@ -183,10 +115,8 @@ def login():
         usuario = Usuario.query.filter_by(identificador=identificador).first()
 
         if usuario and usuario.verificar_senha(senha) and usuario.ativo:
-            # Guarda o id do usuário na sessão -- é assim que o sistema
-            # "lembra" que você está logado nas próximas páginas.
             session["usuario_id"] = usuario.id
-            session["tipo_usuario"] = usuario.tipo
+            session["cargo_usuario"] = usuario.cargo
             return redirect(url_for("bater_ponto"))
 
         flash("Matrícula/login ou senha incorretos.")
@@ -200,9 +130,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ------------------------------------------------------------------
-# ROTA: BATER PONTO (tela principal, para professor e admin)
-# ------------------------------------------------------------------
 @app.route("/ponto", methods=["GET"])
 @login_obrigatorio
 def bater_ponto():
@@ -224,21 +151,8 @@ def bater_ponto():
 @app.route("/ponto/registrar", methods=["POST"])
 @login_obrigatorio
 def registrar_ponto():
-    """
-    Recebe o tipo de batimento + latitude/longitude (mandados pelo
-    JavaScript da página) e decide se o ponto é válido, se está fora do
-    raio, ou se está atrasado.
-
-    Responde em JSON (a tela usa "fetch", não um formulário tradicional),
-    para o JavaScript poder abrir o modal com o mapa sem recarregar a
-    página quando o professor estiver fora do raio.
-    """
     usuario = Usuario.query.get(session["usuario_id"])
 
-    # O tipo de batimento agora é decidido pelo SERVIDOR (com base em
-    # quantas batidas o usuário já fez hoje), não mais enviado pelo
-    # cliente -- assim não tem como alguém adulterar o campo e registrar
-    # um tipo fora de ordem. O botão único no HTML só manda a localização.
     tipo_batimento, batidas_hoje = calcular_proxima_batida(usuario.id)
     latitude = request.form.get("latitude", type=float)
     longitude = request.form.get("longitude", type=float)
@@ -248,7 +162,6 @@ def registrar_ponto():
 
     agora = datetime.now()
 
-    # --- Validação de GPS ---
     dentro_do_raio = True
     distancia = None
     if latitude is not None and longitude is not None:
@@ -259,28 +172,23 @@ def registrar_ponto():
         )
 
     if not dentro_do_raio:
-        # Não salva o ponto -- devolve a distância para o front-end
-        # desenhar o mapa (mostrando o círculo da escola e onde o
-        # professor está).
         return {"status": "fora_do_raio", "distancia": distancia}
 
-    # --- Validação de atraso (não se aplica à saída final) ---
     minutos_atraso = 0
+    minutos_hora_extra = 0
     status = "normal"
-    usou_perdao = False
 
-    if tipo_batimento != "saida":
-        horario_esperado_hoje = datetime.combine(agora.date(), HORARIOS_ESPERADOS[tipo_batimento])
+    horario_esperado = horario_esperado_do_usuario(usuario, tipo_batimento)
+
+    if horario_esperado and tipo_batimento != "saida":
+        horario_esperado_hoje = datetime.combine(agora.date(), horario_esperado)
         minutos_atraso = calcular_minutos_atraso(horario_esperado_hoje, agora)
-
         if minutos_atraso > Config.TOLERANCIA_ATRASO_MINUTOS:
-            if usuario.perdao_atraso_ativo:
-                # A direção já autorizou esse atraso previamente -- não
-                # trava o ponto, e "gasta" o perdão (só vale uma vez).
-                usou_perdao = True
-                usuario.perdao_atraso_ativo = False
-            else:
-                status = "pendente"
+            status = "pendente"
+
+    if horario_esperado and tipo_batimento == "saida":
+        horario_esperado_hoje = datetime.combine(agora.date(), horario_esperado)
+        minutos_hora_extra = calcular_minutos_hora_extra(horario_esperado_hoje, agora)
 
     novo_registro = RegistroPonto(
         usuario_id=usuario.id,
@@ -291,7 +199,8 @@ def registrar_ponto():
         distancia_metros=distancia,
         status=status,
         atraso_minutos=minutos_atraso,
-        perdao_utilizado=usou_perdao,
+        hora_extra_minutos=minutos_hora_extra,
+        hora_extra_autorizada=False,
     )
     db.session.add(novo_registro)
     db.session.commit()
@@ -314,7 +223,7 @@ def registrar_ponto():
 
 
 # ------------------------------------------------------------------
-# ROTAS: PAINEL ADMIN - HORÁRIOS
+# PAINEL ADMIN - HORÁRIOS
 # ------------------------------------------------------------------
 @app.route("/admin")
 @admin_obrigatorio
@@ -325,10 +234,6 @@ def admin_index():
 @app.route("/admin/horarios")
 @admin_obrigatorio
 def admin_horarios():
-    """
-    Monta a tabela "batalha naval": uma linha por (professor, data),
-    com os 4 tipos de batimento nas colunas.
-    """
     usuario = Usuario.query.get(session["usuario_id"])
 
     filtro_nome = request.args.get("nome", "").strip()
@@ -346,21 +251,22 @@ def admin_horarios():
             RegistroPonto.horario >= datetime.strptime(filtro_data_inicio, "%Y-%m-%d")
         )
     if filtro_data_fim:
-        # Soma quase um dia inteiro para incluir todos os horários do
-        # próprio dia final selecionado.
         data_fim_completa = datetime.strptime(filtro_data_fim, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
         consulta = consulta.filter(RegistroPonto.horario <= data_fim_completa)
 
-    # Limite de segurança para não travar a tela em bancos muito grandes.
     registros = consulta.limit(500).all()
 
-    # Agrupa os registros por (usuario_id, data) para montar as linhas
-    # da tabela cruzada.
     agrupado = {}
     for registro in registros:
         data_exibicao = registro.horario.strftime("%d/%m/%Y")
         data_url = registro.horario.strftime("%d-%m-%Y")
         chave = (registro.usuario_id, data_exibicao)
+
+        if registro.editado_por_id:
+            editor = Usuario.query.get(registro.editado_por_id)
+            registro.nome_editor = editor.nome if editor else None
+        else:
+            registro.nome_editor = None
 
         if chave not in agrupado:
             agrupado[chave] = {
@@ -374,45 +280,21 @@ def admin_horarios():
 
     linhas = sorted(agrupado.values(), key=lambda linha: linha["data"], reverse=True)
 
-    todos_professores = Usuario.query.order_by(Usuario.nome).all()
-
     return render_template(
         "painel_horarios.html",
         usuario=usuario,
         linhas=linhas,
-        todos_professores=todos_professores,
         filtro_nome=filtro_nome,
         filtro_data_inicio=filtro_data_inicio,
         filtro_data_fim=filtro_data_fim,
     )
 
 
-@app.route("/admin/horarios/perdao", methods=["POST"])
-@admin_obrigatorio
-def admin_conceder_perdao():
-    usuario_alvo = Usuario.query.get(request.form.get("usuario_id", type=int))
-
-    if usuario_alvo:
-        usuario_alvo.perdao_atraso_ativo = True
-        db.session.commit()
-        flash(f"Perdão de atraso concedido para {usuario_alvo.nome}. Vale para o próximo ponto batido.")
-    else:
-        flash("Professor não encontrado.")
-
-    return redirect(url_for("admin_horarios"))
-
-
 @app.route("/admin/horarios/editar/<int:usuario_id>/<data>", methods=["GET", "POST"])
 @admin_obrigatorio
 def admin_editar_ponto(usuario_id, data):
-    """
-    Tela simples para corrigir manualmente os horários batidos por um
-    professor em um dia específico. `data` chega no formato DD-MM-AAAA
-    (hífen, e não barra -- barra na URL confundiria o Flask, que usa "/"
-    para separar partes da rota).
-    """
     usuario_admin = Usuario.query.get(session["usuario_id"])
-    professor = Usuario.query.get_or_404(usuario_id)
+    pessoa = Usuario.query.get_or_404(usuario_id)
 
     data_convertida = datetime.strptime(data, "%d-%m-%Y").date()
     data_exibicao = data_convertida.strftime("%d/%m/%Y")
@@ -427,15 +309,24 @@ def admin_editar_ponto(usuario_id, data):
     registros_por_tipo = {r.tipo_batimento: r for r in registros_do_dia}
 
     if request.method == "POST":
-        for tipo in ["entrada", "saida_almoco", "volta_almoco", "saida"]:
+        nova_data_texto = request.form.get("nova_data", "").strip()
+        data_alvo = datetime.strptime(nova_data_texto, "%Y-%m-%d").date() if nova_data_texto else data_convertida
+
+        for tipo in ORDEM_BATIDAS:
+            registro_existente = registros_por_tipo.get(tipo)
+
+            if request.form.get(f"excluir_{tipo}") == "on":
+                if registro_existente:
+                    db.session.delete(registro_existente)
+                continue
+
             novo_horario_texto = request.form.get(f"horario_{tipo}", "").strip()
             if not novo_horario_texto:
                 continue
 
             hora, minuto = map(int, novo_horario_texto.split(":"))
-            novo_datetime = datetime.combine(data_convertida, dt_time(hora, minuto))
+            novo_datetime = datetime.combine(data_alvo, dt_time(hora, minuto))
 
-            registro_existente = registros_por_tipo.get(tipo)
             if registro_existente:
                 registro_existente.horario = novo_datetime
                 registro_existente.status = "ajustado"
@@ -448,34 +339,58 @@ def admin_editar_ponto(usuario_id, data):
                 )
                 db.session.add(registro_existente)
 
-            registro_existente.ajustado_por_id = usuario_admin.id
+            if tipo == "saida":
+                registro_existente.hora_extra_autorizada = request.form.get("autorizar_hora_extra") == "on"
+
+            registro_existente.editado_por_id = usuario_admin.id
+            registro_existente.editado_em = datetime.now()
             registro_existente.observacao_ajuste = request.form.get("observacao", "").strip()
 
         db.session.commit()
-        flash(f"Horários de {professor.nome} em {data_exibicao} atualizados.")
+        flash(f"Horários de {pessoa.nome} atualizados.")
         return redirect(url_for("admin_horarios"))
 
-    # Formulário simples de edição -- gerado direto aqui (render_template_string)
-    # para não precisar de mais um arquivo de template só para essa telinha.
     from flask import render_template_string
 
     template_edicao = """
     {% extends "base_admin.html" %}
     {% block titulo %}Editar Ponto{% endblock %}
     {% block conteudo %}
-        <h2>Editar horários - {{ professor.nome }} ({{ data_exibicao }})</h2>
-        <form method="POST" style="background:white; padding:20px; border-radius:8px; max-width:400px;">
+        <h2>Editar horários - {{ pessoa.nome }} ({{ data_exibicao }})</h2>
+        <form method="POST" style="background:white; padding:20px; border-radius:12px; max-width:420px;">
+            <label style="display:block; margin-bottom:4px; font-size:13px;">Data</label>
+            <input type="date" name="nova_data" value="{{ data_convertida }}"
+                   style="width:100%; padding:10px; margin-bottom:16px; border:1px solid #d1d5db; border-radius:8px;">
+
             {% for tipo, rotulo in [("entrada", "Entrada"), ("saida_almoco", "Saída Almoço"),
                                      ("volta_almoco", "Volta Almoço"), ("saida", "Saída")] %}
                 <label style="display:block; margin-bottom:4px; font-size:13px;">{{ rotulo }}</label>
-                <input type="time" name="horario_{{ tipo }}"
-                       value="{{ registros_por_tipo[tipo].horario.strftime('%H:%M') if tipo in registros_por_tipo else '' }}"
-                       style="width:100%; padding:8px; margin-bottom:14px;">
+                <div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">
+                    <input type="time" name="horario_{{ tipo }}"
+                           value="{{ registros_por_tipo[tipo].horario.strftime('%H:%M') if tipo in registros_por_tipo else '' }}"
+                           style="flex:1; padding:10px; border:1px solid #d1d5db; border-radius:8px;">
+                    {% if tipo in registros_por_tipo %}
+                    <label style="font-size:12px; color:#dc2626; display:flex; align-items:center; gap:4px;">
+                        <input type="checkbox" name="excluir_{{ tipo }}"> Excluir
+                    </label>
+                    {% endif %}
+                </div>
+                {% if tipo == "saida" %}
+                <label style="font-size:13px; display:flex; align-items:center; gap:6px; margin-bottom:14px;">
+                    <input type="checkbox" name="autorizar_hora_extra"
+                           {{ "checked" if registros_por_tipo.get("saida") and registros_por_tipo["saida"].hora_extra_autorizada else "" }}>
+                    Autorizar hora extra dessa saída
+                </label>
+                {% else %}
+                <div style="margin-bottom:8px;"></div>
+                {% endif %}
             {% endfor %}
+
             <label style="display:block; margin-bottom:4px; font-size:13px;">Observação (opcional)</label>
             <input type="text" name="observacao" placeholder="Ex: esqueceu de bater, corrigido manualmente"
-                   style="width:100%; padding:8px; margin-bottom:16px;">
-            <button type="submit" style="padding:10px 20px; background:#2563eb; color:white; border:none; border-radius:4px; cursor:pointer;">
+                   style="width:100%; padding:10px; margin-bottom:16px; border:1px solid #d1d5db; border-radius:8px;">
+
+            <button type="submit" style="width:100%; padding:12px; background:#2563eb; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">
                 Salvar
             </button>
         </form>
@@ -484,21 +399,31 @@ def admin_editar_ponto(usuario_id, data):
     return render_template_string(
         template_edicao,
         usuario=usuario_admin,
-        professor=professor,
+        pessoa=pessoa,
         data_exibicao=data_exibicao,
+        data_convertida=data_convertida,
         registros_por_tipo=registros_por_tipo,
     )
 
 
 # ------------------------------------------------------------------
-# ROTAS: PAINEL ADMIN - PROFESSORES (cadastro por matrícula)
+# PAINEL ADMIN - PROFESSORES / SECRETÁRIA
 # ------------------------------------------------------------------
 @app.route("/admin/professores")
 @admin_obrigatorio
 def admin_professores():
     usuario = Usuario.query.get(session["usuario_id"])
-    professores = Usuario.query.filter_by(tipo="professor").order_by(Usuario.nome).all()
-    return render_template("painel_professores.html", usuario=usuario, professores=professores)
+    professores = Usuario.query.filter(
+        Usuario.cargo.in_(CARGOS_SEM_ACESSO_ADMIN)
+    ).order_by(Usuario.nome).all()
+    return render_template(
+        "painel_professores.html",
+        usuario=usuario,
+        professores=professores,
+        cargos_rotulos=CARGOS_ROTULOS,
+        dias_semana=DIAS_SEMANA,
+        series_disponiveis=SERIES_DISPONIVEIS,
+    )
 
 
 @app.route("/admin/professores/adicionar", methods=["POST"])
@@ -507,6 +432,10 @@ def admin_adicionar_professor():
     nome = request.form.get("nome", "").strip()
     matricula = request.form.get("matricula", "").strip()
     senha = request.form.get("senha", "")
+    cargo = request.form.get("cargo", "professor").strip()
+
+    if cargo not in CARGOS_SEM_ACESSO_ADMIN:
+        cargo = "professor"
 
     if not nome or not matricula or len(senha) < 4:
         flash("Preencha nome, matrícula e uma senha de pelo menos 4 caracteres.")
@@ -517,61 +446,90 @@ def admin_adicionar_professor():
         flash(f"Já existe um usuário com a matrícula '{matricula}'.")
         return redirect(url_for("admin_professores"))
 
-    novo_professor = Usuario(nome=nome, identificador=matricula, tipo="professor", ativo=True)
-    novo_professor.definir_senha(senha)
-    db.session.add(novo_professor)
+    novo = Usuario(nome=nome, identificador=matricula, cargo=cargo, ativo=True)
+    novo.definir_senha(senha)
+    db.session.add(novo)
     db.session.commit()
 
-    flash(f"Professor '{nome}' cadastrado com sucesso (matrícula {matricula}).")
-    return redirect(url_for("admin_professores"))
-
-
-@app.route("/admin/professores/<int:usuario_id>/alternar", methods=["POST"])
-@admin_obrigatorio
-def admin_alternar_professor(usuario_id):
-    """Ativa/desativa um professor (desativado não consegue mais logar, mas mantém o histórico de pontos)."""
-    professor = Usuario.query.get_or_404(usuario_id)
-    professor.ativo = not professor.ativo
-    db.session.commit()
-    flash(f"Professor '{professor.nome}' {'reativado' if professor.ativo else 'desativado'}.")
+    flash(f"Professor cadastrado com sucesso. Matrícula: {matricula}")
     return redirect(url_for("admin_professores"))
 
 
 @app.route("/admin/professores/<int:usuario_id>/remover", methods=["POST"])
 @admin_obrigatorio
 def admin_remover_professor(usuario_id):
-    """
-    Remove o cadastro do professor. Atenção: isso também apaga o
-    histórico de pontos dele (por causa da ligação entre as tabelas).
-    Se quiser manter o histórico só desative o professor em vez de
-    removê-lo.
-    """
     professor = Usuario.query.get_or_404(usuario_id)
     nome = professor.nome
 
-    # Remove primeiro os registros de ponto ligados a esse professor,
-    # para não deixar "lixo" no banco (linhas apontando para um usuário
-    # que não existe mais).
     RegistroPonto.query.filter_by(usuario_id=professor.id).delete()
     db.session.delete(professor)
     db.session.commit()
 
-    flash(f"Professor '{nome}' e seu histórico de pontos foram removidos.")
+    flash(f"'{nome}' e seu histórico de pontos foram removidos.")
     return redirect(url_for("admin_professores"))
 
 
+@app.route("/admin/professores/<int:usuario_id>/editar", methods=["GET", "POST"])
+@admin_obrigatorio
+def admin_editar_professor(usuario_id):
+    usuario_admin = Usuario.query.get(session["usuario_id"])
+    pessoa = Usuario.query.get_or_404(usuario_id)
+
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        cargo = request.form.get("cargo", "").strip()
+        if nome:
+            pessoa.nome = nome
+        if cargo in CARGOS_SEM_ACESSO_ADMIN:
+            pessoa.cargo = cargo
+
+        for campo in ["horario_entrada", "horario_saida_almoco", "horario_volta_almoco", "horario_saida"]:
+            valor = request.form.get(campo, "").strip()
+            if valor:
+                hora, minuto = map(int, valor.split(":"))
+                setattr(pessoa, campo, dt_time(hora, minuto))
+
+        dias = request.form.getlist("dias_semana")
+        pessoa.dias_semana = ",".join(dias)
+
+        if pessoa.cargo == "professor":
+            series = request.form.getlist("series")
+            pessoa.series = ",".join(series)
+        else:
+            pessoa.series = None
+
+        nova_senha = request.form.get("senha", "").strip()
+        if nova_senha:
+            if len(nova_senha) < 4:
+                flash("A nova senha precisa ter pelo menos 4 caracteres.")
+                return redirect(url_for("admin_editar_professor", usuario_id=usuario_id))
+            pessoa.definir_senha(nova_senha)
+
+        db.session.commit()
+        flash(f"Dados de '{pessoa.nome}' atualizados.")
+        return redirect(url_for("admin_professores"))
+
+    return render_template(
+        "editar_professor.html",
+        usuario=usuario_admin,
+        pessoa=pessoa,
+        cargos_rotulos={c: CARGOS_ROTULOS[c] for c in CARGOS_SEM_ACESSO_ADMIN},
+        dias_semana=DIAS_SEMANA,
+        series_disponiveis=SERIES_DISPONIVEIS,
+    )
+
+
 # ------------------------------------------------------------------
-# ROTAS: PAINEL ADMIN - USUÁRIOS (CRUD de contas administrativas)
+# PAINEL ADMIN - USUÁRIOS (Administração / Suporte)
 # ------------------------------------------------------------------
-# Qualquer admin pode adicionar, editar, trocar o cargo ou excluir
-# QUALQUER outro admin livremente -- não existe mais um sistema de
-# autorização por código aqui (foi removido a pedido).
 @app.route("/admin/usuarios")
 @admin_obrigatorio
 def admin_usuarios():
     usuario = Usuario.query.get(session["usuario_id"])
-    admins = Usuario.query.filter_by(tipo="admin").order_by(Usuario.nome).all()
-    return render_template("painel_usuarios.html", usuario=usuario, admins=admins)
+    admins = Usuario.query.filter(
+        Usuario.cargo.in_(CARGOS_COM_ACESSO_ADMIN)
+    ).order_by(Usuario.nome).all()
+    return render_template("painel_usuarios.html", usuario=usuario, admins=admins, cargos_rotulos=CARGOS_ROTULOS)
 
 
 @app.route("/admin/usuarios/adicionar", methods=["POST"])
@@ -580,6 +538,10 @@ def admin_adicionar_usuario():
     nome = request.form.get("nome", "").strip()
     identificador = request.form.get("identificador", "").strip()
     senha = request.form.get("senha", "")
+    cargo = request.form.get("cargo", "suporte").strip()
+
+    if cargo not in CARGOS_COM_ACESSO_ADMIN:
+        cargo = "suporte"
 
     if not nome or not identificador or len(senha) < 4:
         flash("Preencha nome, login e uma senha de pelo menos 4 caracteres.")
@@ -590,7 +552,7 @@ def admin_adicionar_usuario():
         flash(f"Já existe um usuário com o login '{identificador}'.")
         return redirect(url_for("admin_usuarios"))
 
-    novo = Usuario(nome=nome, identificador=identificador, tipo="admin", ativo=True)
+    novo = Usuario(nome=nome, identificador=identificador, cargo=cargo, ativo=True)
     novo.definir_senha(senha)
     db.session.add(novo)
     db.session.commit()
@@ -618,11 +580,6 @@ def admin_remover_usuario(usuario_id):
 @app.route("/admin/usuarios/<int:usuario_id>/editar", methods=["GET", "POST"])
 @admin_obrigatorio
 def admin_editar_usuario(usuario_id):
-    """
-    Edita nome, login, senha e cargo (professor/administrativo) de um
-    usuário administrativo. Qualquer admin pode editar qualquer outro,
-    sem restrição.
-    """
     from flask import render_template_string
 
     solicitante = Usuario.query.get(session["usuario_id"])
@@ -632,7 +589,7 @@ def admin_editar_usuario(usuario_id):
         novo_nome = request.form.get("nome", "").strip()
         novo_login = request.form.get("identificador", "").strip()
         nova_senha = request.form.get("senha", "").strip()
-        novo_cargo = request.form.get("tipo", "").strip()
+        novo_cargo = request.form.get("cargo", "").strip()
 
         if novo_login and novo_login != alvo.identificador:
             conflito = Usuario.query.filter_by(identificador=novo_login).first()
@@ -644,8 +601,8 @@ def admin_editar_usuario(usuario_id):
         if novo_nome:
             alvo.nome = novo_nome
 
-        if novo_cargo in ("admin", "professor"):
-            alvo.tipo = novo_cargo
+        if novo_cargo in CARGOS_COM_ACESSO_ADMIN:
+            alvo.cargo = novo_cargo
 
         if nova_senha:
             if len(nova_senha) < 4:
@@ -657,8 +614,6 @@ def admin_editar_usuario(usuario_id):
         flash(f"Dados de '{alvo.nome}' atualizados.")
         return redirect(url_for("admin_usuarios"))
 
-    # Formulário simples, embutido aqui mesmo (mesma ideia usada na
-    # edição de ponto, para não precisar de mais um arquivo de template).
     template_edicao = """
     {% extends "base_admin.html" %}
     {% block titulo %}Editar Usuário{% endblock %}
@@ -673,9 +628,9 @@ def admin_editar_usuario(usuario_id):
             <input type="text" name="identificador" value="{{ alvo.identificador }}" style="width:100%; padding:10px; margin-bottom:14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px;">
 
             <label style="display:block; font-size:13px; margin-bottom:4px;">Cargo</label>
-            <select name="tipo" style="width:100%; padding:10px; margin-bottom:14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px;">
-                <option value="admin" {{ "selected" if alvo.tipo == "admin" else "" }}>Administrativo</option>
-                <option value="professor" {{ "selected" if alvo.tipo == "professor" else "" }}>Professor</option>
+            <select name="cargo" style="width:100%; padding:10px; margin-bottom:14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px;">
+                <option value="administracao" {{ "selected" if alvo.cargo == "administracao" else "" }}>Administração</option>
+                <option value="suporte" {{ "selected" if alvo.cargo == "suporte" else "" }}>Suporte</option>
             </select>
 
             <label style="display:block; font-size:13px; margin-bottom:4px;">Nova senha (deixe em branco para não alterar)</label>
@@ -687,13 +642,12 @@ def admin_editar_usuario(usuario_id):
         </form>
     {% endblock %}
     """
-    return render_template_string(
-        template_edicao,
-        usuario=solicitante,
-        alvo=alvo,
-    )
+    return render_template_string(template_edicao, usuario=solicitante, alvo=alvo)
 
 
+# ------------------------------------------------------------------
+# PAINEL ADMIN - EXPORTAR EXCEL
+# ------------------------------------------------------------------
 @app.route("/admin/excel")
 @admin_obrigatorio
 def admin_excel():
@@ -705,26 +659,47 @@ def admin_excel():
 @admin_obrigatorio
 def admin_excel_real():
     usuario = Usuario.query.get(session["usuario_id"])
-    todos_professores = Usuario.query.order_by(Usuario.nome).all()
-    return render_template("painel_excel_real.html", usuario=usuario, todos_professores=todos_professores)
+    todas_pessoas = Usuario.query.order_by(Usuario.nome).all()
+    return render_template("painel_excel_real.html", usuario=usuario, todas_pessoas=todas_pessoas)
+
+
+def calcular_horas_trabalhadas_minutos(batimentos):
+    entrada = batimentos.get("entrada")
+    saida_almoco = batimentos.get("saida_almoco")
+    volta_almoco = batimentos.get("volta_almoco")
+    saida = batimentos.get("saida")
+
+    if not entrada or not saida:
+        return None
+
+    total = (saida.horario - entrada.horario).total_seconds() / 60
+    if saida_almoco and volta_almoco:
+        total -= (volta_almoco.horario - saida_almoco.horario).total_seconds() / 60
+
+    return max(0, round(total))
+
+
+def formatar_minutos_como_horas(minutos):
+    if minutos is None:
+        return ""
+    horas = minutos // 60
+    resto = minutos % 60
+    return f"{horas}h{resto:02d}"
 
 
 @app.route("/admin/excel/gerar", methods=["POST"])
 @admin_obrigatorio
 def admin_gerar_excel():
-    """
-    Monta a planilha com openpyxl a partir dos filtros escolhidos, e
-    devolve o arquivo pronto para download (o navegador baixa
-    automaticamente, sem precisar salvar nada no servidor).
-    """
     from io import BytesIO
     from openpyxl import Workbook
     from flask import send_file
 
     usuario_id_filtro = request.form.get("usuario_id", type=int)
-    tipo_filtro = request.form.get("tipo_batimento", "").strip()
     data_inicio = request.form.get("data_inicio", "").strip()
     data_fim = request.form.get("data_fim", "").strip()
+    colunas = request.form.getlist("colunas")
+    if not colunas:
+        colunas = ["nome", "data", "horarios", "horas_totais"]
 
     consulta = RegistroPonto.query.join(
         Usuario, RegistroPonto.usuario_id == Usuario.id
@@ -732,8 +707,6 @@ def admin_gerar_excel():
 
     if usuario_id_filtro:
         consulta = consulta.filter(RegistroPonto.usuario_id == usuario_id_filtro)
-    if tipo_filtro:
-        consulta = consulta.filter(RegistroPonto.tipo_batimento == tipo_filtro)
     if data_inicio:
         consulta = consulta.filter(
             RegistroPonto.horario >= datetime.strptime(data_inicio, "%Y-%m-%d")
@@ -744,7 +717,6 @@ def admin_gerar_excel():
 
     registros = consulta.all()
 
-    # Monta a tabela cruzada em memória: (professor, data) -> {tipo: horario}
     agrupado = {}
     for registro in registros:
         chave = (registro.usuario.nome, registro.horario.strftime("%d/%m/%Y"))
@@ -752,37 +724,61 @@ def admin_gerar_excel():
             agrupado[chave] = {}
         agrupado[chave][registro.tipo_batimento] = registro
 
-    # --- Monta a planilha ---
     workbook = Workbook()
     planilha = workbook.active
     planilha.title = "Ponto"
 
-    rotulos_colunas = ["Professor", "Data", "Entrada", "Saída Almoço", "Volta Almoço", "Saída"]
-    planilha.append(rotulos_colunas)
+    cabecalho = []
+    if "nome" in colunas:
+        cabecalho.append("Professor")
+    if "data" in colunas:
+        cabecalho.append("Data")
+    if "horarios" in colunas:
+        cabecalho += ["Entrada", "Saída Almoço", "Volta Almoço", "Saída"]
+    if "horas_totais" in colunas:
+        cabecalho.append("Horas Totais")
+    if "horas_extras_autorizadas" in colunas:
+        cabecalho.append("Horas Extras Autorizadas")
+    if "horas_extras_nao_autorizadas" in colunas:
+        cabecalho.append("Horas Extras Não Autorizadas")
+    planilha.append(cabecalho)
 
-    for (nome_professor, data_str), batimentos in sorted(agrupado.items()):
-        linha = [nome_professor, data_str]
-        for tipo in ["entrada", "saida_almoco", "volta_almoco", "saida"]:
-            registro = batimentos.get(tipo)
-            if registro:
-                texto = registro.horario.strftime("%H:%M")
-                if registro.status == "pendente":
-                    texto += " (atrasado)"
-                elif registro.status == "ajustado":
-                    texto += " (ajustado)"
-            else:
-                texto = ""
-            linha.append(texto)
+    for (nome_pessoa, data_str), batimentos in sorted(agrupado.items()):
+        linha = []
+        if "nome" in colunas:
+            linha.append(nome_pessoa)
+        if "data" in colunas:
+            linha.append(data_str)
+        if "horarios" in colunas:
+            for tipo in ORDEM_BATIDAS:
+                registro = batimentos.get(tipo)
+                if registro:
+                    texto = registro.horario.strftime("%H:%M")
+                    if registro.status == "pendente":
+                        texto += " (atrasado)"
+                    elif registro.status == "ajustado":
+                        texto += " (ajustado)"
+                else:
+                    texto = ""
+                linha.append(texto)
+        if "horas_totais" in colunas:
+            minutos = calcular_horas_trabalhadas_minutos(batimentos)
+            linha.append(formatar_minutos_como_horas(minutos))
+        if "horas_extras_autorizadas" in colunas:
+            saida = batimentos.get("saida")
+            minutos = saida.hora_extra_minutos if (saida and saida.hora_extra_autorizada) else 0
+            linha.append(formatar_minutos_como_horas(minutos) if minutos else "")
+        if "horas_extras_nao_autorizadas" in colunas:
+            saida = batimentos.get("saida")
+            minutos = saida.hora_extra_minutos if (saida and not saida.hora_extra_autorizada) else 0
+            linha.append(formatar_minutos_como_horas(minutos) if minutos else "")
+
         planilha.append(linha)
 
-    # Ajusta a largura das colunas para ficar legível (não precisa ser
-    # bonito, mas larguras muito apertadas cortam o texto na hora de abrir).
-    larguras = [22, 12, 16, 16, 16, 16]
-    for indice, largura in enumerate(larguras, start=1):
+    for indice in range(1, len(cabecalho) + 1):
         letra_coluna = planilha.cell(row=1, column=indice).column_letter
-        planilha.column_dimensions[letra_coluna].width = largura
+        planilha.column_dimensions[letra_coluna].width = 20
 
-    # Salva em memória (não precisa criar um arquivo físico no servidor).
     arquivo_em_memoria = BytesIO()
     workbook.save(arquivo_em_memoria)
     arquivo_em_memoria.seek(0)
@@ -795,7 +791,7 @@ def admin_gerar_excel():
         download_name=nome_arquivo,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    # debug=True facilita muito enquanto você está desenvolvendo (mostra
-    # erros detalhados na tela, recarrega sozinho quando salva o arquivo).
-    # Lembre de mudar para debug=False quando for para a VPS de verdade.
+
+
+if __name__ == "__main__":
     app.run(debug=True)
