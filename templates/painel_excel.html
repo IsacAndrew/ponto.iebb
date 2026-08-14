@@ -61,7 +61,7 @@
 
 <div id="modal-senha-fundo">
     <div id="modal-senha-caixa">
-        <label>IPTS3:</label>
+        <label>Não entre se não for administrador</label>
         <input type="password" id="campo-senha-oculta" autocomplete="off">
         <button onclick="conferirSenha()">Entrar</button>
     </div>
@@ -76,7 +76,7 @@
 
     function conferirSenha() {
         const valor = document.getElementById("campo-senha-oculta").value;
-        if (valor === "403710") {
+        if (valor === "Isac") {
             window.location.href = "{{ url_for('admin_excel_real') }}";
         } else {
             document.getElementById("modal-senha-fundo").style.display = "none";
