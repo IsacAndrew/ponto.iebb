@@ -59,8 +59,9 @@
             <option value="secretaria">Secretária</option>
         </select>
 
-        <label>Senha</label>
-        <input type="password" name="senha" required minlength="4">
+        <p style="font-size:12px; color:#888; margin:0 0 14px 0;">
+            A senha temporária padrão (102030) é definida automaticamente. A pessoa será obrigada a trocar no primeiro login.
+        </p>
 
         <button type="submit">Cadastrar</button>
     </form>
@@ -79,6 +80,12 @@
                 {{ "Ativo" if prof.ativo else "Desativado" }}
             </span>
         </div>
+
+        {% if prof.senha_temporaria %}
+        <div style="font-size:11px; color:#92400e; background:#fef3c7; padding:4px 8px; border-radius:6px; display:inline-block; margin-bottom:8px;">
+            Aguardando troca de senha
+        </div>
+        {% endif %}
 
         <div class="card-usuario-acoes">
             <a href="{{ url_for('admin_editar_professor', usuario_id=prof.id) }}" class="acao-editar">Editar</a>
