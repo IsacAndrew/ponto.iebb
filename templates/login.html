@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Login - Sistema de Ponto</title>
+    <title>Instituto Batista</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
     <style>
         * { box-sizing: border-box; }
 
@@ -15,10 +16,9 @@
             justify-content: center;
             align-items: center;
             padding: 20px;
-
             background: linear-gradient(160deg, #14532d 0%, #166534 45%, #1e6b3a 75%, #ca8a04 140%);
         }
-
+      
         .cartao-vidro {
             width: 100%;
             max-width: 380px;
@@ -90,11 +90,10 @@
             margin-bottom: 16px;
             border: 1px solid rgba(255,255,255,0.4);
             border-radius: 10px;
-            font-size: 16px;
+            font-size: 16px; /* 16px evita zoom automático no iPhone ao focar */
             background: rgba(255, 255, 255, 0.9);
             color: #1f2937;
         }
-
         .campo-senha {
             position: relative;
             margin-bottom: 22px;
@@ -122,7 +121,6 @@
             align-items: center;
             justify-content: center;
             color: #4b5563;
-
             user-select: none;
             -webkit-user-select: none;
             touch-action: manipulation;
@@ -183,13 +181,11 @@
         <form method="POST" action="{{ url_for('login') }}">
             <label for="identificador">Matrícula / Login</label>
             <input type="text" id="identificador" name="identificador" required autofocus autocomplete="username">
-
             <label for="senha">Senha</label>
             <div class="campo-senha">
                 <input type="password" id="senha" name="senha" required autocomplete="current-password">
                 <button type="button" class="botao-olho" id="botao-olho"
                         aria-label="Segure para ver a senha">
-                    
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
                         <circle cx="12" cy="12" r="3"/>
@@ -207,20 +203,17 @@
         // ------------------------------------------------------------
         const campoSenha = document.getElementById("senha");
         const botaoOlho = document.getElementById("botao-olho");
-
         function mostrarSenha() {
             campoSenha.type = "text";
         }
         function esconderSenha() {
             campoSenha.type = "password";
         }
-
         botaoOlho.addEventListener("mousedown", mostrarSenha);
         botaoOlho.addEventListener("touchstart", function (evento) {
             evento.preventDefault();
             mostrarSenha();
         });
-
         botaoOlho.addEventListener("mouseup", esconderSenha);
         botaoOlho.addEventListener("mouseleave", esconderSenha);
         botaoOlho.addEventListener("touchend", esconderSenha);
