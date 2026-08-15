@@ -100,18 +100,22 @@
         }
         #botao-ponto svg { width: 46px; height: 46px; }
 
-        /* Cores por estado (aplicadas via classe, trocada pelo JS) */
         .estado-entrada       { background: radial-gradient(circle at 30% 30%, #22c55e, #15803d); }
         .estado-saida_almoco  { background: radial-gradient(circle at 30% 30%, #fb923c, #c2410c); }
         .estado-volta_almoco  { background: radial-gradient(circle at 30% 30%, #38bdf8, #0369a1); }
         .estado-saida         { background: radial-gradient(circle at 30% 30%, #f87171, #b91c1c); }
 
-        /* Animação de "pulso" ao clicar com sucesso */
         @keyframes pulso-sucesso {
             0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
             100% { box-shadow: 0 0 0 28px rgba(255,255,255,0); }
         }
         .animando { animation: pulso-sucesso 0.7s ease-out; }
+
+        @keyframes girar {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        #botao-ponto.enviando svg { animation: girar 0.8s linear infinite; }
 
         @keyframes respirar {
             0%, 100% { transform: scale(1); }
@@ -150,6 +154,7 @@
             text-align: left;
         }
 
+        /* --- Modal do mapa --- */
         #modal-fundo {
             display: none;
             position: fixed;
@@ -226,7 +231,7 @@
         <div id="mensagem-resultado"></div>
         <div id="status-gps">Localizando...</div>
     </div>
-    
+
     <div id="modal-fundo">
         <div id="modal-caixa">
             <h3>Você está longe da escola</h3>
@@ -368,13 +373,45 @@
         function baterPonto() {
             const botao = document.getElementById("botao-ponto");
             if (botao.disabled) return;
+            enviarBatida();
+            pedirLocalizacao();
+        }
 
-            pedirLocalizacao(function () {
-                const dados = new FormData();
-                if (ultimaLatitude !== null) dados.append("latitude", ultimaLatitude);
-                if (ultimaLongitude !== null) dados.append("longitude", ultimaLongitude);
+        function baterPonto() {
+            const botao = document.getElementById("botao-ponto");
+            if (botao.disabled) return;
+            travarBotaoEnviando();
+            enviarBatida();
+            pedirLocalizacao();
+        }
 
-                fetch("{{ url_for('registrar_ponto') }}", {
+        let textoOriginalBotao = "";
+
+        function travarBotaoEnviando() {
+            const botao = document.getElementById("botao-ponto");
+            const texto = document.getElementById("texto-botao");
+            textoOriginalBotao = texto.textContent;
+
+            botao.disabled = true;
+            botao.classList.add("enviando");
+            texto.textContent = "Registrando...";
+        }
+
+        function destravarBotao() {
+            const botao = document.getElementById("botao-ponto");
+            botao.classList.remove("enviando");
+            const texto = document.getElementById("texto-botao");
+            if (texto.textContent === "Registrando...") {
+                texto.textContent = textoOriginalBotao;
+            }
+        }
+
+        function enviarBatida() {
+            const dados = new FormData();
+            if (ultimaLatitude !== null) dados.append("latitude", ultimaLatitude);
+            if (ultimaLongitude !== null) dados.append("longitude", ultimaLongitude);
+
+            fetch("{{ url_for('registrar_ponto') }}", {
                     method: "POST",
                     headers: { "X-Requested-With": "XMLHttpRequest" },
                     body: dados
@@ -382,14 +419,20 @@
                     .then(function (resposta) { return resposta.json(); })
                     .then(function (resultado) {
                         if (resultado.status === "fora_do_raio") {
+                            destravarBotao();
+                            document.getElementById("botao-ponto").disabled = false;
                             abrirModalComMapa(resultado.distancia, ultimaLatitude, ultimaLongitude);
                             return;
                         }
                         if (resultado.status === "erro") {
+                            destravarBotao();
+                            document.getElementById("botao-ponto").disabled = false;
                             mostrarResultado(resultado.mensagem, "aviso");
                             return;
                         }
 
+                        const botao = document.getElementById("botao-ponto");
+                        botao.classList.remove("enviando");
                         atualizarBotao(resultado.proximo_tipo, resultado.proximo_rotulo);
 
                         botao.classList.add("animando");
@@ -398,9 +441,10 @@
                         mostrarResultado(resultado.mensagem, resultado.status === "pendente" ? "aviso" : "sucesso");
                     })
                     .catch(function () {
+                        destravarBotao();
+                        document.getElementById("botao-ponto").disabled = false;
                         mostrarResultado("Erro ao registrar o ponto. Tente novamente.", "aviso");
                     });
-            });
         }
     </script>
 
