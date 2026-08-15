@@ -1,0 +1,84 @@
+<!--
+    trocar_senha.html
+    -------------------
+    Tela obrigatória no primeiro login (enquanto a conta ainda está com
+    a senha temporária padrão). Segue o mesmo visual do login (vidro
+    fosco), pra manter consistência, mas é uma página independente --
+    tanto professor quanto admin passam por aqui.
+-->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Trocar Senha</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            background: linear-gradient(160deg, #14532d 0%, #166534 45%, #1e6b3a 75%, #ca8a04 140%);
+        }
+        .cartao-vidro {
+            width: 100%;
+            max-width: 380px;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 20px;
+            padding: 32px 24px;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+            text-align: center;
+        }
+        h1 { font-size: 20px; color: white; margin: 0 0 6px 0; }
+        .subtitulo { font-size: 13px; color: rgba(255,255,255,0.85); margin-bottom: 24px; }
+        label { display: block; text-align: left; font-size: 13px; color: rgba(255,255,255,0.9); margin-bottom: 5px; }
+        input {
+            width: 100%; padding: 13px 14px; margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.4); border-radius: 10px;
+            font-size: 16px; background: rgba(255,255,255,0.9); color: #1f2937;
+        }
+        button {
+            width: 100%; padding: 14px; background: linear-gradient(135deg, #16a34a, #15803d);
+            color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer;
+        }
+        .mensagens { list-style: none; padding: 0; margin: 0 0 16px 0; }
+        .mensagens li {
+            background-color: rgba(254, 226, 226, 0.95); color: #991b1b;
+            padding: 10px; border-radius: 8px; font-size: 14px; margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="cartao-vidro">
+        <h1>Defina sua senha</h1>
+        <div class="subtitulo">Olá, {{ usuario.nome }}. Por segurança, troque a senha temporária antes de continuar.</div>
+
+        {% with mensagens = get_flashed_messages() %}
+            {% if mensagens %}
+                <ul class="mensagens">
+                    {% for mensagem in mensagens %}
+                        <li>{{ mensagem }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('trocar_senha') }}">
+            <label for="senha">Nova senha</label>
+            <input type="password" id="senha" name="senha" required minlength="4" autofocus>
+
+            <label for="confirmar_senha">Confirme a nova senha</label>
+            <input type="password" id="confirmar_senha" name="confirmar_senha" required minlength="4">
+
+            <button type="submit">Salvar e continuar</button>
+        </form>
+    </div>
+</body>
+</html>
