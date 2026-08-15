@@ -1,11 +1,16 @@
+from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
+from zoneinfo import ZoneInfo
+
+FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+def agora_brasil():
+    return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
 def calcular_distancia_metros(lat1, lng1, lat2, lng2):
     RAIO_DA_TERRA_METROS = 6371000
 
-    # A fórmula trabalha com radianos, não com graus -- por isso convertemos.
     lat1_rad, lng1_rad, lat2_rad, lng2_rad = map(radians, [lat1, lng1, lat2, lng2])
-
     diferenca_lat = lat2_rad - lat1_rad
     diferenca_lng = lng2_rad - lng1_rad
 
@@ -17,23 +22,19 @@ def calcular_distancia_metros(lat1, lng1, lat2, lng2):
 
     return RAIO_DA_TERRA_METROS * c
 
-
 def esta_dentro_do_raio(lat_usuario, lng_usuario, lat_escola, lng_escola, raio_metros):
     distancia = calcular_distancia_metros(lat_usuario, lng_usuario, lat_escola, lng_escola)
     return distancia <= raio_metros, distancia
-
 
 def calcular_minutos_atraso(horario_esperado, horario_batido):
     diferenca = horario_batido - horario_esperado
     minutos = diferenca.total_seconds() / 60
     return max(0, round(minutos))
 
-
 def calcular_minutos_hora_extra(horario_esperado, horario_batido):
     diferenca = horario_batido - horario_esperado
     minutos = diferenca.total_seconds() / 60
     return max(0, round(minutos))
-
 
 MAPA_CAMPO_HORARIO = {
     "entrada": "horario_entrada",
