@@ -16,9 +16,11 @@
             justify-content: center;
             align-items: center;
             padding: 20px;
+
+
             background: linear-gradient(160deg, #14532d 0%, #166534 45%, #1e6b3a 75%, #ca8a04 140%);
         }
-      
+
         .cartao-vidro {
             width: 100%;
             max-width: 380px;
@@ -42,6 +44,7 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+
 
             position: relative;
             overflow: hidden;
@@ -90,10 +93,11 @@
             margin-bottom: 16px;
             border: 1px solid rgba(255,255,255,0.4);
             border-radius: 10px;
-            font-size: 16px; /* 16px evita zoom automático no iPhone ao focar */
+            font-size: 16px;
             background: rgba(255, 255, 255, 0.9);
             color: #1f2937;
         }
+
         .campo-senha {
             position: relative;
             margin-bottom: 22px;
@@ -181,6 +185,7 @@
         <form method="POST" action="{{ url_for('login') }}">
             <label for="identificador">Matrícula / Login</label>
             <input type="text" id="identificador" name="identificador" required autofocus autocomplete="username">
+
             <label for="senha">Senha</label>
             <div class="campo-senha">
                 <input type="password" id="senha" name="senha" required autocomplete="current-password">
@@ -203,17 +208,20 @@
         // ------------------------------------------------------------
         const campoSenha = document.getElementById("senha");
         const botaoOlho = document.getElementById("botao-olho");
+
         function mostrarSenha() {
             campoSenha.type = "text";
         }
         function esconderSenha() {
             campoSenha.type = "password";
         }
+
         botaoOlho.addEventListener("mousedown", mostrarSenha);
         botaoOlho.addEventListener("touchstart", function (evento) {
             evento.preventDefault();
             mostrarSenha();
         });
+
         botaoOlho.addEventListener("mouseup", esconderSenha);
         botaoOlho.addEventListener("mouseleave", esconderSenha);
         botaoOlho.addEventListener("touchend", esconderSenha);
