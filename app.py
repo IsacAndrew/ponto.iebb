@@ -5,7 +5,9 @@ from functools import wraps
 
 from config import Config, DIAS_SEMANA, CARGOS_SEM_ACESSO_ADMIN, CARGOS_COM_ACESSO_ADMIN, CARGOS_ROTULOS, SERIES_DISPONIVEIS
 from models import db, Usuario, RegistroPonto
-from utils import esta_dentro_do_raio, calcular_minutos_atraso, calcular_minutos_hora_extra, horario_esperado_do_usuario
+from utils import esta_dentro_do_raio, calcular_minutos_atraso, calcular_minutos_hora_extra, horario_esperado_do_usuario, agora_brasil
+
+SENHA_TEMPORARIA_PADRAO = "102030"
 
 
 def criar_app():
@@ -21,11 +23,6 @@ def criar_app():
 
 
 def criar_admin_inicial_se_necessario():
-    """
-    No plano gratuito do Render não tem Shell. O sistema cria o primeiro
-    usuário de Suporte sozinho, lendo variáveis de ambiente (ADMIN_NOME,
-    ADMIN_LOGIN, ADMIN_SENHA), se ele ainda não existir.
-    """
     nome = os.environ.get("ADMIN_NOME")
     login = os.environ.get("ADMIN_LOGIN")
     senha = os.environ.get("ADMIN_SENHA")
@@ -37,7 +34,7 @@ def criar_admin_inicial_se_necessario():
     if ja_existe:
         return
 
-    novo_admin = Usuario(nome=nome, identificador=login, cargo="suporte", ativo=True)
+    novo_admin = Usuario(nome=nome, identificador=login, cargo="suporte", ativo=True, senha_temporaria=False)
     novo_admin.definir_senha(senha)
     db.session.add(novo_admin)
     db.session.commit()
@@ -52,17 +49,12 @@ ROTULOS_BOTAO = {
     "volta_almoco": "Retorno do Almoço",
     "saida": "Saída",
 }
-ROTULOS_TIPO = {
-    "entrada": "Entrada",
-    "saida_almoco": "Saída Almoço",
-    "volta_almoco": "Volta Almoço",
-    "saida": "Saída",
-}
 
 
 def calcular_proxima_batida(usuario_id):
-    inicio_do_dia = datetime.combine(datetime.now().date(), dt_time.min)
-    fim_do_dia = datetime.combine(datetime.now().date(), dt_time.max)
+    hoje = agora_brasil().date()
+    inicio_do_dia = datetime.combine(hoje, dt_time.min)
+    fim_do_dia = datetime.combine(hoje, dt_time.max)
 
     quantidade_hoje = RegistroPonto.query.filter(
         RegistroPonto.usuario_id == usuario_id,
@@ -82,6 +74,11 @@ def login_obrigatorio(funcao):
         if "usuario_id" not in session:
             flash("Você precisa entrar no sistema primeiro.")
             return redirect(url_for("login"))
+
+        usuario = Usuario.query.get(session["usuario_id"])
+        if usuario and usuario.senha_temporaria and funcao.__name__ != "trocar_senha":
+            return redirect(url_for("trocar_senha"))
+
         return funcao(*args, **kwargs)
 
     return rota_protegida
@@ -96,6 +93,8 @@ def admin_obrigatorio(funcao):
         if not usuario or not usuario.eh_admin():
             flash("Você não tem permissão para acessar essa área.")
             return redirect(url_for("bater_ponto"))
+        if usuario.senha_temporaria:
+            return redirect(url_for("trocar_senha"))
         return funcao(*args, **kwargs)
 
     return rota_protegida
@@ -130,6 +129,35 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/trocar-senha", methods=["GET", "POST"])
+@login_obrigatorio
+def trocar_senha():
+    usuario = Usuario.query.get(session["usuario_id"])
+
+    if request.method == "POST":
+        nova_senha = request.form.get("senha", "")
+        confirmar_senha = request.form.get("confirmar_senha", "")
+
+        if len(nova_senha) < 4:
+            flash("A nova senha precisa ter pelo menos 4 caracteres.")
+            return redirect(url_for("trocar_senha"))
+        if nova_senha != confirmar_senha:
+            flash("As senhas não coincidem.")
+            return redirect(url_for("trocar_senha"))
+        if nova_senha == SENHA_TEMPORARIA_PADRAO:
+            flash("Escolha uma senha diferente da temporária.")
+            return redirect(url_for("trocar_senha"))
+
+        usuario.definir_senha(nova_senha)
+        usuario.senha_temporaria = False
+        db.session.commit()
+
+        flash("Senha atualizada com sucesso.")
+        return redirect(url_for("bater_ponto"))
+
+    return render_template("trocar_senha.html", usuario=usuario)
+
+
 @app.route("/ponto", methods=["GET"])
 @login_obrigatorio
 def bater_ponto():
@@ -160,7 +188,7 @@ def registrar_ponto():
     if tipo_batimento is None:
         return {"status": "erro", "mensagem": "Você já bateu todos os pontos de hoje."}, 400
 
-    agora = datetime.now()
+    agora = agora_brasil()
 
     dentro_do_raio = True
     distancia = None
@@ -293,6 +321,11 @@ def admin_horarios():
 @app.route("/admin/horarios/editar/<int:usuario_id>/<data>", methods=["GET", "POST"])
 @admin_obrigatorio
 def admin_editar_ponto(usuario_id, data):
+    """
+    Corrige os horários batidos por alguém num dia. Permite trocar o
+    horário, trocar a DATA (move os registros para outro dia), excluir
+    um batimento específico, e autorizar a hora extra da saída.
+    """
     usuario_admin = Usuario.query.get(session["usuario_id"])
     pessoa = Usuario.query.get_or_404(usuario_id)
 
@@ -343,7 +376,7 @@ def admin_editar_ponto(usuario_id, data):
                 registro_existente.hora_extra_autorizada = request.form.get("autorizar_hora_extra") == "on"
 
             registro_existente.editado_por_id = usuario_admin.id
-            registro_existente.editado_em = datetime.now()
+            registro_existente.editado_em = agora_brasil()
             registro_existente.observacao_ajuste = request.form.get("observacao", "").strip()
 
         db.session.commit()
@@ -431,14 +464,13 @@ def admin_professores():
 def admin_adicionar_professor():
     nome = request.form.get("nome", "").strip()
     matricula = request.form.get("matricula", "").strip()
-    senha = request.form.get("senha", "")
     cargo = request.form.get("cargo", "professor").strip()
 
     if cargo not in CARGOS_SEM_ACESSO_ADMIN:
         cargo = "professor"
 
-    if not nome or not matricula or len(senha) < 4:
-        flash("Preencha nome, matrícula e uma senha de pelo menos 4 caracteres.")
+    if not nome or not matricula:
+        flash("Preencha nome e matrícula.")
         return redirect(url_for("admin_professores"))
 
     ja_existe = Usuario.query.filter_by(identificador=matricula).first()
@@ -446,8 +478,8 @@ def admin_adicionar_professor():
         flash(f"Já existe um usuário com a matrícula '{matricula}'.")
         return redirect(url_for("admin_professores"))
 
-    novo = Usuario(nome=nome, identificador=matricula, cargo=cargo, ativo=True)
-    novo.definir_senha(senha)
+    novo = Usuario(nome=nome, identificador=matricula, cargo=cargo, ativo=True, senha_temporaria=True)
+    novo.definir_senha(SENHA_TEMPORARIA_PADRAO)
     db.session.add(novo)
     db.session.commit()
 
@@ -504,6 +536,7 @@ def admin_editar_professor(usuario_id):
                 flash("A nova senha precisa ter pelo menos 4 caracteres.")
                 return redirect(url_for("admin_editar_professor", usuario_id=usuario_id))
             pessoa.definir_senha(nova_senha)
+            pessoa.senha_temporaria = True
 
         db.session.commit()
         flash(f"Dados de '{pessoa.nome}' atualizados.")
@@ -537,14 +570,13 @@ def admin_usuarios():
 def admin_adicionar_usuario():
     nome = request.form.get("nome", "").strip()
     identificador = request.form.get("identificador", "").strip()
-    senha = request.form.get("senha", "")
     cargo = request.form.get("cargo", "suporte").strip()
 
     if cargo not in CARGOS_COM_ACESSO_ADMIN:
         cargo = "suporte"
 
-    if not nome or not identificador or len(senha) < 4:
-        flash("Preencha nome, login e uma senha de pelo menos 4 caracteres.")
+    if not nome or not identificador:
+        flash("Preencha nome e login.")
         return redirect(url_for("admin_usuarios"))
 
     ja_existe = Usuario.query.filter_by(identificador=identificador).first()
@@ -552,8 +584,8 @@ def admin_adicionar_usuario():
         flash(f"Já existe um usuário com o login '{identificador}'.")
         return redirect(url_for("admin_usuarios"))
 
-    novo = Usuario(nome=nome, identificador=identificador, cargo=cargo, ativo=True)
-    novo.definir_senha(senha)
+    novo = Usuario(nome=nome, identificador=identificador, cargo=cargo, ativo=True, senha_temporaria=True)
+    novo.definir_senha(SENHA_TEMPORARIA_PADRAO)
     db.session.add(novo)
     db.session.commit()
 
@@ -609,6 +641,7 @@ def admin_editar_usuario(usuario_id):
                 flash("A nova senha precisa ter pelo menos 4 caracteres.")
                 return redirect(url_for("admin_editar_usuario", usuario_id=usuario_id))
             alvo.definir_senha(nova_senha)
+            alvo.senha_temporaria = True
 
         db.session.commit()
         flash(f"Dados de '{alvo.nome}' atualizados.")
@@ -652,15 +685,8 @@ def admin_editar_usuario(usuario_id):
 @admin_obrigatorio
 def admin_excel():
     usuario = Usuario.query.get(session["usuario_id"])
-    return render_template("painel_excel.html", usuario=usuario)
-
-
-@app.route("/admin/excel/real")
-@admin_obrigatorio
-def admin_excel_real():
-    usuario = Usuario.query.get(session["usuario_id"])
     todas_pessoas = Usuario.query.order_by(Usuario.nome).all()
-    return render_template("painel_excel_real.html", usuario=usuario, todas_pessoas=todas_pessoas)
+    return render_template("painel_excel.html", usuario=usuario, todas_pessoas=todas_pessoas)
 
 
 def calcular_horas_trabalhadas_minutos(batimentos):
@@ -783,7 +809,7 @@ def admin_gerar_excel():
     workbook.save(arquivo_em_memoria)
     arquivo_em_memoria.seek(0)
 
-    nome_arquivo = f"ponto_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    nome_arquivo = f"ponto_{agora_brasil().strftime('%Y%m%d_%H%M')}.xlsx"
 
     return send_file(
         arquivo_em_memoria,
@@ -794,4 +820,5 @@ def admin_gerar_excel():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    modo_debug = os.environ.get("DEBUG", "").strip().lower() == "true"
+    app.run(debug=modo_debug)
