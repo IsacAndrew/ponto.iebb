@@ -155,7 +155,6 @@
             text-align: left;
         }
 
-        /* --- Modal do mapa --- */
         #modal-fundo {
             display: none;
             position: fixed;
@@ -218,8 +217,8 @@
         <button
             id="botao-ponto"
             type="button"
-            class="{% if proximo_tipo %}estado-{{ proximo_tipo }} pode-bater{% endif %}"
-            {% if not proximo_tipo %}disabled{% endif %}
+            class="{% if proximo_tipo %}estado-{{ proximo_tipo }}{% endif %}"
+            disabled
             onclick="baterPonto()"
         >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -230,7 +229,7 @@
         </button>
 
         <div id="mensagem-resultado"></div>
-        <div id="status-gps">Localizando...</div>
+        <div id="status-gps">Localizando... o botão libera assim que encontrar sua posição.</div>
     </div>
 
     <div id="modal-fundo">
@@ -273,14 +272,28 @@
         // ------------------------------------------------------------
         let ultimaLatitude = null;
         let ultimaLongitude = null;
+        let proximoTipoAtual = {{ (proximo_tipo or "")|tojson }};
 
         function atualizarStatusGPS(texto) {
             document.getElementById("status-gps").textContent = texto;
         }
 
+        function habilitarBotaoConformeLocalizacao(temLocalizacao) {
+            const botao = document.getElementById("botao-ponto");
+
+            if (temLocalizacao && proximoTipoAtual) {
+                botao.disabled = false;
+                botao.classList.add("pode-bater");
+            } else {
+                botao.disabled = true;
+                botao.classList.remove("pode-bater");
+            }
+        }
+
         function pedirLocalizacao(callback) {
             if (!navigator.geolocation) {
-                atualizarStatusGPS("Seu navegador não suporta localização.");
+                atualizarStatusGPS("Seu navegador não suporta localização. Não é possível bater o ponto.");
+                habilitarBotaoConformeLocalizacao(false);
                 if (callback) callback();
                 return;
             }
@@ -289,10 +302,14 @@
                     ultimaLatitude = posicao.coords.latitude;
                     ultimaLongitude = posicao.coords.longitude;
                     atualizarStatusGPS("Localização encontrada.");
+                    habilitarBotaoConformeLocalizacao(true);
                     if (callback) callback();
                 },
                 function () {
-                    atualizarStatusGPS("Não foi possível obter sua localização. Ative o GPS.");
+                    ultimaLatitude = null;
+                    ultimaLongitude = null;
+                    atualizarStatusGPS("Não foi possível obter sua localização. Ative o GPS para bater o ponto.");
+                    habilitarBotaoConformeLocalizacao(false);
                     if (callback) callback();
                 },
                 { enableHighAccuracy: true, timeout: 10000 }
@@ -348,14 +365,15 @@
             const botao = document.getElementById("botao-ponto");
             const texto = document.getElementById("texto-botao");
 
+            proximoTipoAtual = proximoTipo;
+
             CORES_ESTADO.forEach(function (classe) { botao.classList.remove(classe); });
 
             texto.textContent = proximoRotulo;
 
             if (proximoTipo) {
                 botao.classList.add("estado-" + proximoTipo);
-                botao.classList.add("pode-bater");
-                botao.disabled = false;
+                habilitarBotaoConformeLocalizacao(ultimaLatitude !== null && ultimaLongitude !== null);
             } else {
                 botao.classList.remove("pode-bater");
                 botao.disabled = true;
@@ -374,14 +392,12 @@
         function baterPonto() {
             const botao = document.getElementById("botao-ponto");
             if (botao.disabled) return;
-            enviarBatida();
 
-            pedirLocalizacao();
-        }
-
-        function baterPonto() {
-            const botao = document.getElementById("botao-ponto");
-            if (botao.disabled) return;
+            if (ultimaLatitude === null || ultimaLongitude === null) {
+                mostrarResultado("Aguardando localização. Ative o GPS e tente novamente.", "aviso");
+                habilitarBotaoConformeLocalizacao(false);
+                return;
+            }
 
             travarBotaoEnviando();
 
@@ -435,8 +451,14 @@
                             mostrarResultado(resultado.mensagem, "aviso");
                             return;
                         }
+                        if (resultado.status === "sem_localizacao") {
+                            destravarBotao();
+                            habilitarBotaoConformeLocalizacao(false);
+                            mostrarResultado(resultado.mensagem, "aviso");
+                            return;
+                        }
 
-
+                    
                         const botao = document.getElementById("botao-ponto");
                         botao.classList.remove("enviando");
                         atualizarBotao(resultado.proximo_tipo, resultado.proximo_rotulo);
