@@ -23,6 +23,11 @@ def criar_app():
 
 
 def criar_admin_inicial_se_necessario():
+    """
+    No plano gratuito do Render não tem Shell. O sistema cria o primeiro
+    usuário de Suporte sozinho, lendo variáveis de ambiente (ADMIN_NOME,
+    ADMIN_LOGIN, ADMIN_SENHA), se ele ainda não existir.
+    """
     nome = os.environ.get("ADMIN_NOME")
     login = os.environ.get("ADMIN_LOGIN")
     senha = os.environ.get("ADMIN_SENHA")
@@ -190,14 +195,14 @@ def registrar_ponto():
 
     agora = agora_brasil()
 
-    dentro_do_raio = True
-    distancia = None
-    if latitude is not None and longitude is not None:
-        dentro_do_raio, distancia = esta_dentro_do_raio(
-            latitude, longitude,
-            Config.ESCOLA_LATITUDE, Config.ESCOLA_LONGITUDE,
-            Config.RAIO_TOLERANCIA_METROS,
-        )
+    if latitude is None or longitude is None:
+        return {"status": "sem_localizacao", "mensagem": "Ative a localização do seu celular para bater o ponto."}, 400
+
+    dentro_do_raio, distancia = esta_dentro_do_raio(
+        latitude, longitude,
+        Config.ESCOLA_LATITUDE, Config.ESCOLA_LONGITUDE,
+        Config.RAIO_TOLERANCIA_METROS,
+    )
 
     if not dentro_do_raio:
         return {"status": "fora_do_raio", "distancia": distancia}
