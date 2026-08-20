@@ -23,11 +23,6 @@ def criar_app():
 
 
 def criar_admin_inicial_se_necessario():
-    """
-    No plano gratuito do Render não tem Shell. O sistema cria o primeiro
-    usuário de Suporte sozinho, lendo variáveis de ambiente (ADMIN_NOME,
-    ADMIN_LOGIN, ADMIN_SENHA), se ele ainda não existir.
-    """
     nome = os.environ.get("ADMIN_NOME")
     login = os.environ.get("ADMIN_LOGIN")
     senha = os.environ.get("ADMIN_SENHA")
